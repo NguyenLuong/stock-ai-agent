@@ -1,2 +1,4 @@
 """Database session and connection management."""
-# TODO: Story 1.2 — implement async SQLAlchemy engine and session factory
+from shared.db.client import get_async_session, get_engine, get_session_factory, reset_engine
+
+__all__ = ["get_async_session", "get_engine", "get_session_factory", "reset_engine"]
