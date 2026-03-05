@@ -1,0 +1,8 @@
+# Fundamental Analysis Agent — BCTC analysis prompt
+# TODO: Story 1.4 — implement full Jinja2 template
+name: fundamental_analysis_bctc
+version: "1.0"
+model_key: triage
+template: |
+  # PLACEHOLDER — Story 1.4
+  Analyze BCTC (financial statements) for {{ ticker }}: {{ bctc_data }}

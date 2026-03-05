@@ -1,0 +1,32 @@
+# Crawler source definitions — URLs, schedules, rate limits
+# TODO: Story 2.x — configure actual source URLs and rate limits
+
+sources:
+  vietstock:
+    base_url: "https://vietstock.vn"
+    schedule: "0 6,12,18 * * *"   # 3x daily
+    rate_limit_rps: 1
+    enabled: true
+
+  cafef:
+    base_url: "https://cafef.vn"
+    schedule: "0 6,12,18 * * *"
+    rate_limit_rps: 1
+    enabled: true
+
+  vneconomy:
+    base_url: "https://vneconomy.vn"
+    schedule: "0 7,13,19 * * *"
+    rate_limit_rps: 1
+    enabled: true
+
+macro:
+  gsovn:
+    base_url: "https://www.gso.gov.vn"
+    schedule: "0 8 * * 1"          # Weekly on Monday
+    enabled: true
+
+  sbv:
+    base_url: "https://www.sbv.gov.vn"
+    schedule: "0 8 * * 1"
+    enabled: true

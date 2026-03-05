@@ -1,0 +1,8 @@
+# Orchestrator — synthesis prompt
+# TODO: Story 1.4 — implement full Jinja2 template
+name: orchestrator_synthesis
+version: "1.0"
+model_key: orchestrator_synthesis
+template: |
+  # PLACEHOLDER — Story 1.4
+  Synthesize agent outputs into final recommendation: {{ agent_results }}

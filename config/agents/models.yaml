@@ -1,0 +1,19 @@
+# Model selection per task type (ARCH11)
+# Change values here, restart container — no code change needed
+
+models:
+  triage: "gpt-4o-mini"          # Classification, simple summary
+  morning_briefing: "gpt-4o-mini" # Template-driven structured output
+  orchestrator_synthesis: "gpt-4o" # Complex reasoning, conflict resolution
+  terminal_chat: "gpt-4o"         # Deep analysis, user-facing
+  embedding: "text-embedding-3-small"
+
+temperature:
+  default: 0.3
+  creative: 0.7
+  deterministic: 0.0
+
+max_tokens:
+  summary: 500
+  analysis: 2000
+  morning_briefing: 3000

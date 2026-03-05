@@ -1,0 +1,12 @@
+# Confidence thresholds and alert triggers
+# TODO: Story 3.x — refine thresholds based on backtesting
+
+confidence:
+  min_recommendation: 0.7     # Minimum confidence to include in briefing
+  alert_trigger: 0.85         # Threshold to send real-time alert
+  triage_pass: 0.6            # Minimum relevance score to pass triage
+
+alerts:
+  price_change_pct: 5.0       # % price movement to trigger alert
+  volume_spike_multiplier: 3.0 # Volume vs 30-day avg to trigger alert
+  sentiment_shift: 0.4        # Sentiment score delta to trigger alert

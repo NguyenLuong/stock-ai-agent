@@ -1,0 +1,8 @@
+# Telegram morning briefing formatter prompt template
+# TODO: Story 1.4 — implement full Jinja2 template
+name: telegram_morning_briefing
+version: "1.0"
+model_key: morning_briefing
+template: |
+  # PLACEHOLDER — Story 1.4
+  Format morning briefing for Telegram: {{ briefing_data }}

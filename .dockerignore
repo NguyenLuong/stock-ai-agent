@@ -1,0 +1,35 @@
+# BMAD framework and output — not needed in Docker images
+_bmad/
+_bmad-output/
+
+# Git
+.git/
+.gitignore
+
+# Env files — never bake into images
+.env
+.env.*
+!.env.example
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.coverage
+*.log
+
+# IDE
+.cursor/
+.windsurf/
+.claude/
+.vscode/
+.idea/
+
+# Docs
+*.md

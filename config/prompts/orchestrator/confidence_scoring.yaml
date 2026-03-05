@@ -1,0 +1,8 @@
+# Orchestrator — confidence scoring prompt
+# TODO: Story 1.4 — implement full Jinja2 template
+name: orchestrator_confidence_scoring
+version: "1.0"
+model_key: orchestrator_synthesis
+template: |
+  # PLACEHOLDER — Story 1.4
+  Score confidence for recommendation: {{ recommendation }}
