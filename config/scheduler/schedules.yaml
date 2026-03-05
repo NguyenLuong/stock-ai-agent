@@ -1,0 +1,28 @@
+# Prefect cron schedule definitions
+# TODO: Story 2.6 — connect to Prefect flows
+
+flows:
+  morning_briefing:
+    cron: "0 7 * * 1-5"       # Weekdays at 7:00 AM
+    description: "Daily morning briefing pipeline"
+    enabled: true
+
+  crawler_vietstock:
+    cron: "0 6,12,18 * * *"   # 3x daily
+    description: "Vietstock news crawler"
+    enabled: true
+
+  crawler_cafef:
+    cron: "0 6,12,18 * * *"
+    description: "CafeF news crawler"
+    enabled: true
+
+  crawler_vneconomy:
+    cron: "0 7,13,19 * * *"
+    description: "VnEconomy news crawler"
+    enabled: true
+
+  data_cleanup:
+    cron: "0 2 * * *"          # Daily at 2:00 AM
+    description: "30-day rolling window cleanup"
+    enabled: true

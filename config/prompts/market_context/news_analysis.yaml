@@ -1,0 +1,8 @@
+# Market Context Agent — news synthesis prompt
+# TODO: Story 1.4 — implement full Jinja2 template
+name: market_context_news_analysis
+version: "1.0"
+model_key: triage
+template: |
+  # PLACEHOLDER — Story 1.4
+  Analyze news articles for market context: {{ articles }}

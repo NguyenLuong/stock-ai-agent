@@ -1,0 +1,8 @@
+# Orchestrator — conflict resolution prompt
+# TODO: Story 1.4 — implement full Jinja2 template
+name: orchestrator_conflict_resolution
+version: "1.0"
+model_key: orchestrator_synthesis
+template: |
+  # PLACEHOLDER — Story 1.4
+  Resolve conflicting signals: {{ conflicts }}

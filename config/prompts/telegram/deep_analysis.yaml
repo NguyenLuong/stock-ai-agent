@@ -1,0 +1,8 @@
+# Telegram — deep analysis (Terminal Chat) response formatter
+# TODO: Story 1.4 — implement full Jinja2 template
+name: telegram_deep_analysis
+version: "1.0"
+model_key: terminal_chat
+template: |
+  # PLACEHOLDER — Story 1.4
+  Format deep analysis response for Terminal Chat: {{ analysis }}

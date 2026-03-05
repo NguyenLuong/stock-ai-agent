@@ -1,0 +1,8 @@
+# Telegram — event alert formatter
+# TODO: Story 1.4 — implement full Jinja2 template
+name: telegram_alert
+version: "1.0"
+model_key: triage
+template: |
+  # PLACEHOLDER — Story 1.4
+  Format real-time alert for Telegram: {{ alert_data }}
