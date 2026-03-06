@@ -1,2 +1,12 @@
 """LLM client, embedder, and prompt loader."""
-# TODO: Story 1.3 — implement LLM infrastructure
+
+from shared.llm.client import LLMCallError, LLMClient, call_llm
+from shared.llm.embedder import embed_single, embed_texts
+
+__all__ = [
+    "LLMCallError",
+    "LLMClient",
+    "call_llm",
+    "embed_single",
+    "embed_texts",
+]
