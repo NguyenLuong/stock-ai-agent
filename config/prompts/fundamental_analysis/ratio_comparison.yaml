@@ -1,8 +1,38 @@
 # Fundamental Analysis Agent — ratio comparison prompt
-# TODO: Story 1.4 — implement full Jinja2 template
+# Variables: ticker (str), analysis_date (str),
+#            company_ratios (dict with pe, pb, roe, eps, debt_to_equity, current_ratio, dividend_yield),
+#            sector_ratios (dict with pe, pb, roe, eps, debt_to_equity),
+#            sector_name (str), peers (list[dict] with ticker, pe, pb, roe)
 name: fundamental_analysis_ratio_comparison
 version: "1.0"
 model_key: triage
 template: |
-  # PLACEHOLDER — Story 1.4
-  Compare financial ratios for {{ ticker }} vs sector: {{ ratios }}
+  Bạn là Fundamental Analyst cho thị trường chứng khoán Việt Nam.
+  So sánh chỉ số tài chính của {{ ticker }} với trung bình ngành {{ sector_name }}.
+
+  **Ngày phân tích:** {{ analysis_date }}
+  **Mã cổ phiếu:** {{ ticker }}
+  **Ngành:** {{ sector_name }}
+
+  **Chỉ số {{ ticker }} vs Ngành:**
+  | Chỉ số | {{ ticker }} | TB Ngành | Chênh lệch |
+  |--------|-------------|----------|------------|
+  | P/E | {{ company_ratios.pe }} | {{ sector_ratios.pe }} | {% if company_ratios.pe and sector_ratios.pe %}{{ ((company_ratios.pe - sector_ratios.pe) / sector_ratios.pe * 100) | round(1) }}%{% else %}N/A{% endif %} |
+  | P/B | {{ company_ratios.pb }} | {{ sector_ratios.pb }} | {% if company_ratios.pb and sector_ratios.pb %}{{ ((company_ratios.pb - sector_ratios.pb) / sector_ratios.pb * 100) | round(1) }}%{% else %}N/A{% endif %} |
+  | ROE | {{ company_ratios.roe }}% | {{ sector_ratios.roe }}% | {% if company_ratios.roe and sector_ratios.roe %}{{ (company_ratios.roe - sector_ratios.roe) | round(1) }}pp{% else %}N/A{% endif %} |
+  | D/E | {{ company_ratios.debt_to_equity }} | {{ sector_ratios.debt_to_equity }} | N/A |
+
+  **So sánh với các công ty cùng ngành:**
+  {% for peer in peers %}
+  - {{ peer.ticker }}: P/E={{ peer.pe }}, P/B={{ peer.pb }}, ROE={{ peer.roe }}%
+  {% endfor %}
+
+  **Yêu cầu phân tích:**
+  1. Đánh giá vị thế {{ ticker }} trong ngành (dẫn đầu/trung bình/dưới trung bình)
+  2. Chỉ số nào nổi bật tích cực, chỉ số nào đáng lo ngại
+  3. So sánh hiệu quả sinh lời với peers
+  4. Tổng kết: {{ ticker }} có hấp dẫn hơn trung bình ngành không
+
+  **Quy tắc bắt buộc:**
+  - Chỉ sử dụng dữ liệu được cung cấp — KHÔNG tự tạo số liệu
+  - Disclaimer: Phân tích chỉ mang tính tham khảo, không phải khuyến nghị đầu tư

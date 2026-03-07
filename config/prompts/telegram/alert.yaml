@@ -1,8 +1,41 @@
-# Telegram — event alert formatter
-# TODO: Story 1.4 — implement full Jinja2 template
+# Telegram — real-time event alert formatter
+# Variables: alert_type (str: price_spike/volume_spike/sentiment_shift/breaking_news),
+#            ticker (str), timestamp (str),
+#            current_value (float), threshold (float),
+#            details (str), related_news (str optional)
 name: telegram_alert
 version: "1.0"
 model_key: triage
 template: |
-  # PLACEHOLDER — Story 1.4
-  Format real-time alert for Telegram: {{ alert_data }}
+  Bạn là Alert Formatter — format cảnh báo real-time cho Telegram.
+
+  **THÔNG TIN CẢNH BÁO:**
+  - Loại: {{ alert_type }}
+  - Mã: {{ ticker }}
+  - Thời gian: {{ timestamp }}
+  - Giá trị hiện tại: {{ current_value }}
+  - Ngưỡng kích hoạt: {{ threshold }}
+
+  **Chi tiết:** {{ details }}
+
+  {% if related_news %}
+  **Tin liên quan:** {{ related_news }}
+  {% endif %}
+
+  **YÊU CẦU FORMAT:**
+  Format thành cảnh báo Telegram ngắn gọn (max 1000 ký tự):
+
+  1. Emoji cảnh báo phù hợp loại alert:
+     - price_spike: 🚀 (tăng) hoặc 💥 (giảm)
+     - volume_spike: 📊
+     - sentiment_shift: 🔄
+     - breaking_news: 📰
+  2. Tiêu đề bold: *⚠️ CẢNH BÁO: [loại] — [ticker]*
+  3. Số liệu key (1-2 dòng)
+  4. Hành động đề xuất (theo dõi thêm / cần xem xét)
+  5. Timestamp
+
+  **Quy tắc bắt buộc:**
+  - NGẮN GỌN — chỉ thông tin essential
+  - KHÔNG đưa khuyến nghị mua/bán
+  - Ghi rõ: "Cảnh báo tự động — cần xác minh thêm"

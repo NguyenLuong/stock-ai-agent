@@ -1,8 +1,51 @@
 # Orchestrator — confidence scoring prompt
-# TODO: Story 1.4 — implement full Jinja2 template
+# Variables: ticker (str), analysis_date (str),
+#            recommendation (str: MUA/BÁN/GIỮ/THEO DÕI),
+#            data_completeness (dict with market_context, technical, fundamental — each float 0-1),
+#            agent_agreement (float 0-1), conflict_count (int),
+#            data_freshness_hours (float), synthesis_summary (str)
 name: orchestrator_confidence_scoring
 version: "1.0"
 model_key: orchestrator_synthesis
 template: |
-  # PLACEHOLDER — Story 1.4
-  Score confidence for recommendation: {{ recommendation }}
+  Bạn là Confidence Scorer — tính toán mức độ tin cậy cho khuyến nghị đầu tư.
+
+  **Ngày phân tích:** {{ analysis_date }}
+  **Mã cổ phiếu:** {{ ticker }}
+  **Khuyến nghị:** {{ recommendation }}
+
+  **YẾU TỐ ĐÁNH GIÁ:**
+
+  **1. Độ đầy đủ dữ liệu:**
+  - Market Context: {{ data_completeness.market_context }}
+  - Technical Analysis: {{ data_completeness.technical }}
+  - Fundamental Analysis: {{ data_completeness.fundamental }}
+
+  **2. Mức đồng thuận giữa agents:** {{ agent_agreement }}
+  **3. Số xung đột:** {{ conflict_count }}
+  **4. Độ mới dữ liệu:** {{ data_freshness_hours }} giờ
+
+  **5. Tóm tắt tổng hợp:**
+  {{ synthesis_summary }}
+
+  **YÊU CẦU:**
+  1. Tính confidence score tổng thể (0.0-1.0) dựa trên:
+     - Độ đầy đủ dữ liệu (trọng số 30%)
+     - Mức đồng thuận agents (trọng số 30%)
+     - Độ mới dữ liệu (trọng số 20%)
+     - Chất lượng phân tích (trọng số 20%)
+  2. Giải thích các yếu tố tăng/giảm confidence
+  3. Cảnh báo nếu confidence < 0.6
+
+  **Output format:**
+  ```
+  CONFIDENCE: [0.0-1.0]
+  BREAKDOWN: data=[x], agreement=[x], freshness=[x], quality=[x]
+  FLAGS: [cảnh báo nếu có]
+  ```
+
+  **Quy tắc bắt buộc:**
+  - KHÔNG inflate confidence score — trung thực với dữ liệu
+  - Score < 0.5: không nên đưa khuyến nghị
+  - Score 0.5-0.7: khuyến nghị có điều kiện
+  - Score > 0.7: khuyến nghị đáng tin cậy
