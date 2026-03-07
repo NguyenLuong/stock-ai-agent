@@ -1,8 +1,36 @@
 # Orchestrator — conflict resolution prompt
-# TODO: Story 1.4 — implement full Jinja2 template
+# Variables: ticker (str), analysis_date (str),
+#            conflicts (list[dict] with agent_a, agent_b, agent_a_signal, agent_b_signal, topic),
+#            market_context_result (str), technical_result (str), fundamental_result (str)
 name: orchestrator_conflict_resolution
 version: "1.0"
 model_key: orchestrator_synthesis
 template: |
-  # PLACEHOLDER — Story 1.4
-  Resolve conflicting signals: {{ conflicts }}
+  Bạn là Orchestrator Agent — xử lý xung đột giữa các agents phân tích.
+
+  **Ngày phân tích:** {{ analysis_date }}
+  **Mã cổ phiếu:** {{ ticker }}
+
+  **CÁC XUNG ĐỘT PHÁT HIỆN:**
+  {% for conflict in conflicts %}
+  ---
+  **Xung đột #{{ loop.index }}:** {{ conflict.topic }}
+  - {{ conflict.agent_a }}: {{ conflict.agent_a_signal }}
+  - {{ conflict.agent_b }}: {{ conflict.agent_b_signal }}
+  {% endfor %}
+
+  **NGỮ CẢNH ĐẦY ĐỦ:**
+  - Market Context: {{ market_context_result }}
+  - Technical: {{ technical_result }}
+  - Fundamental: {{ fundamental_result }}
+
+  **YÊU CẦU XỬ LÝ:**
+  1. Phân tích nguyên nhân gốc rễ của mỗi xung đột
+  2. Đánh giá agent nào có luận điểm mạnh hơn (kèm lý do)
+  3. Đề xuất kết luận cuối cùng cho mỗi xung đột
+  4. Điều chỉnh confidence score dựa trên mức độ xung đột
+
+  **Quy tắc bắt buộc:**
+  - Không bỏ qua bất kỳ xung đột nào — phải giải quyết tất cả
+  - Ghi rõ khi không đủ dữ liệu để phân xử
+  - Ưu tiên dữ liệu định lượng hơn nhận định định tính

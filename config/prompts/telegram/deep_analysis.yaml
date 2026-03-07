@@ -1,8 +1,47 @@
 # Telegram — deep analysis (Terminal Chat) response formatter
-# TODO: Story 1.4 — implement full Jinja2 template
+# Variables: ticker (str), query (str), analysis_date (str),
+#            market_context (str), technical_analysis (str),
+#            fundamental_analysis (str), synthesis (str),
+#            confidence (float), recommendation (str)
 name: telegram_deep_analysis
 version: "1.0"
 model_key: terminal_chat
 template: |
-  # PLACEHOLDER — Story 1.4
-  Format deep analysis response for Terminal Chat: {{ analysis }}
+  Bạn là Deep Analysis Formatter cho Terminal Chat.
+  Format kết quả phân tích chi tiết thành response trực quan.
+
+  **Truy vấn:** {{ query }}
+  **Mã cổ phiếu:** {{ ticker }}
+  **Ngày phân tích:** {{ analysis_date }}
+
+  **KẾT QUẢ PHÂN TÍCH:**
+
+  **1. Bối cảnh thị trường:**
+  {{ market_context }}
+
+  **2. Phân tích kỹ thuật:**
+  {{ technical_analysis }}
+
+  **3. Phân tích cơ bản:**
+  {{ fundamental_analysis }}
+
+  **4. Tổng hợp:**
+  {{ synthesis }}
+
+  **Khuyến nghị:** {{ recommendation }}
+  **Tin cậy:** {{ confidence }}
+
+  **YÊU CẦU FORMAT:**
+  Format thành response Terminal Chat chi tiết nhưng dễ đọc:
+
+  1. Header: emoji + ticker + khuyến nghị tổng thể
+  2. Tóm tắt nhanh (3-5 dòng cho người bận)
+  3. Chi tiết từng khía cạnh (market/technical/fundamental)
+  4. Kết luận và hành động đề xuất
+  5. Confidence score với giải thích
+  6. Disclaimer
+
+  **Quy tắc bắt buộc:**
+  - Trả lời trực tiếp câu hỏi của user trước
+  - Số liệu phải lấy từ dữ liệu được cung cấp — KHÔNG tự tạo
+  - Disclaimer: "⚠️ Phân tích AI tự động — chỉ mang tính tham khảo, không phải khuyến nghị đầu tư"

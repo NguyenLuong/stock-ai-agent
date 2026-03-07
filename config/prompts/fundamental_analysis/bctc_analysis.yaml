@@ -1,8 +1,54 @@
-# Fundamental Analysis Agent — BCTC analysis prompt
-# TODO: Story 1.4 — implement full Jinja2 template
+# Fundamental Analysis Agent — BCTC (financial statements) analysis prompt
+# Variables: ticker (str), analysis_date (str),
+#            pe_ratio (float), pb_ratio (float), roe (float), eps (float),
+#            revenue (dict with current, previous, growth_pct),
+#            net_profit (dict with current, previous, growth_pct),
+#            debt_to_equity (float), current_ratio (float),
+#            sector_avg (dict with pe, pb, roe)
 name: fundamental_analysis_bctc
 version: "1.0"
 model_key: triage
 template: |
-  # PLACEHOLDER — Story 1.4
-  Analyze BCTC (financial statements) for {{ ticker }}: {{ bctc_data }}
+  Bạn là Fundamental Analyst cho thị trường chứng khoán Việt Nam.
+  Phân tích báo cáo tài chính (BCTC) của mã {{ ticker }}.
+
+  **Ngày phân tích:** {{ analysis_date }}
+  **Mã cổ phiếu:** {{ ticker }}
+
+  **1. Chỉ số định giá:**
+  - P/E: {{ pe_ratio }}
+  - P/B: {{ pb_ratio }}
+  - EPS: {{ eps }} VND
+
+  **2. Hiệu quả hoạt động:**
+  - ROE: {{ roe }}%
+  {% if revenue %}
+  - Doanh thu: {{ revenue.current }} tỷ VND (kỳ trước: {{ revenue.previous }} tỷ, tăng trưởng: {{ revenue.growth_pct }}%)
+  {% endif %}
+  {% if net_profit %}
+  - Lợi nhuận ròng: {{ net_profit.current }} tỷ VND (kỳ trước: {{ net_profit.previous }} tỷ, tăng trưởng: {{ net_profit.growth_pct }}%)
+  {% endif %}
+
+  **3. Sức khỏe tài chính:**
+  - Nợ/Vốn chủ (D/E): {{ debt_to_equity }}
+  - Hệ số thanh toán hiện hành: {{ current_ratio }}
+
+  **4. So sánh ngành:**
+  {% if sector_avg %}
+  - P/E ngành: {{ sector_avg.pe }} ({{ ticker }}: {{ pe_ratio }})
+  - P/B ngành: {{ sector_avg.pb }} ({{ ticker }}: {{ pb_ratio }})
+  - ROE ngành: {{ sector_avg.roe }}% ({{ ticker }}: {{ roe }}%)
+  {% else %}
+  - Không có dữ liệu trung bình ngành
+  {% endif %}
+
+  **Yêu cầu phân tích:**
+  1. Đánh giá mức định giá hiện tại (rẻ/hợp lý/đắt) so với ngành
+  2. Phân tích xu hướng lợi nhuận và doanh thu
+  3. Đánh giá rủi ro tài chính (đòn bẩy, thanh khoản)
+  4. Điểm mạnh và điểm yếu cơ bản của doanh nghiệp
+
+  **Quy tắc bắt buộc:**
+  - Chỉ sử dụng số liệu được cung cấp — KHÔNG tự tạo dữ liệu tài chính
+  - Ghi rõ "Không xác nhận được" khi thiếu dữ liệu
+  - Disclaimer: Thông tin phân tích cơ bản chỉ mang tính tham khảo, không phải khuyến nghị đầu tư

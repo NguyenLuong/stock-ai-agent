@@ -1,8 +1,54 @@
-# Telegram morning briefing formatter prompt template
-# TODO: Story 1.4 — implement full Jinja2 template
+# Telegram — morning briefing formatter
+# Variables: briefing_date (str), market_summary (str),
+#            watchlist_analyses (list[dict] with ticker, recommendation, confidence, summary),
+#            macro_highlights (str), top_movers (list[dict] with ticker, change_pct, volume_ratio),
+#            alerts (list[str])
 name: telegram_morning_briefing
 version: "1.0"
 model_key: morning_briefing
 template: |
-  # PLACEHOLDER — Story 1.4
-  Format morning briefing for Telegram: {{ briefing_data }}
+  Bạn là Telegram Formatter — định dạng Morning Briefing cho Telegram.
+
+  **Ngày:** {{ briefing_date }}
+
+  **DỮ LIỆU ĐẦU VÀO:**
+
+  **Tổng quan thị trường:**
+  {{ market_summary }}
+
+  **Phân tích danh mục theo dõi:**
+  {% for analysis in watchlist_analyses %}
+  - {{ analysis.ticker }}: {{ analysis.recommendation }} ({{ analysis.confidence }}) — {{ analysis.summary }}
+  {% endfor %}
+
+  **Điểm nhấn vĩ mô:**
+  {{ macro_highlights }}
+
+  **Top biến động:**
+  {% for mover in top_movers %}
+  - {{ mover.ticker }}: {{ mover.change_pct }}% (Vol: {{ mover.volume_ratio }}x)
+  {% endfor %}
+
+  {% if alerts %}
+  **Cảnh báo:**
+  {% for alert in alerts %}
+  - {{ alert }}
+  {% endfor %}
+  {% endif %}
+
+  **YÊU CẦU FORMAT:**
+  Format thành tin nhắn Telegram (max 4096 ký tự) với cấu trúc:
+
+  1. Header: emoji + tiêu đề + ngày
+  2. Tổng quan thị trường (3-5 dòng)
+  3. Bảng phân tích danh mục (mỗi mã 1-2 dòng)
+  4. Điểm nhấn vĩ mô (bullet points)
+  5. Cảnh báo (nếu có)
+  6. Footer: disclaimer
+
+  **Quy tắc format Telegram:**
+  - Dùng emoji phù hợp (📈📉🟢🔴⚠️)
+  - Bold cho tiêu đề: *text*
+  - Ngắn gọn, dễ đọc trên mobile
+  - KHÔNG dùng markdown table (Telegram không hỗ trợ)
+  - Disclaimer: "⚠️ Phân tích AI tự động — chỉ mang tính tham khảo"
