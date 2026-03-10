@@ -12,6 +12,9 @@ dependencies = [
     "scrapy>=2.11",
     "httpx>=0.27",
     "beautifulsoup4>=4.12",
+    "vnstock>=3.0",
+    "pandas>=2.0",
+    "tenacity>=8.0",
 ]
 
 [project.optional-dependencies]
