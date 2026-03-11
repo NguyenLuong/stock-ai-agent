@@ -1,5 +1,4 @@
 # Crawler source definitions — URLs, schedules, rate limits
-# TODO: Story 2.x — configure actual source URLs and rate limits
 
 sources:
   vietstock:
@@ -7,18 +6,26 @@ sources:
     schedule: "0 6,12,18 * * *"   # 3x daily
     rate_limit_rps: 1
     enabled: true
+    rss_feeds:
+      - "https://vietstock.vn/rss/tai-chinh.rss"
+      - "https://vietstock.vn/rss/chung-khoan.rss"
 
   cafef:
     base_url: "https://cafef.vn"
     schedule: "0 6,12,18 * * *"
     rate_limit_rps: 1
     enabled: true
+    rss_feeds:
+      - "https://cafef.vn/rss/trang-chu.rss"
+      - "https://cafef.vn/rss/thi-truong-chung-khoan.rss"
 
   vneconomy:
     base_url: "https://vneconomy.vn"
     schedule: "0 7,13,19 * * *"
     rate_limit_rps: 1
     enabled: true
+    rss_feeds:
+      - "https://vneconomy.vn/rss/chung-khoan.rss"
 
 macro:
   gsovn:
