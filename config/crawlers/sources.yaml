@@ -28,12 +28,31 @@ sources:
       - "https://vneconomy.vn/rss/chung-khoan.rss"
 
 macro:
-  gsovn:
-    base_url: "https://www.gso.gov.vn"
-    schedule: "0 8 * * 1"          # Weekly on Monday
+  vn_index:
+    source: "vnstock"
+    symbol: "VNINDEX"
+    indicators: ["vn_index_close", "vn_index_volume"]
     enabled: true
+    schedule: "30 9,14 * * 1-5"    # Twice daily on trading days (after open + mid-session)
 
-  sbv:
-    base_url: "https://www.sbv.gov.vn"
-    schedule: "0 8 * * 1"
+  exchange_rate:
+    source: "vnstock"
+    symbol: "USDVND"
+    indicators: ["usd_vnd_rate"]
+    fallback_source: "sbv.gov.vn"
     enabled: true
+    schedule: "0 9 * * 1-5"        # Daily on weekdays
+
+  foreign_flow:
+    source: "vnstock"
+    indicators: ["foreign_net_flow"]
+    enabled: true
+    schedule: "0 16 * * 1-5"       # Daily after market close
+
+  sbv_interest_rate:
+    source: "sbv.gov.vn"
+    base_url: "https://www.sbv.gov.vn"
+    indicators: ["sbv_interest_rate"]
+    rate_limit_rps: 1
+    enabled: true
+    schedule: "0 8 * * 1"          # Weekly on Monday (SBV updates infrequently)
