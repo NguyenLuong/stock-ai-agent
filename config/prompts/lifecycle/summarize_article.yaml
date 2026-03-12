@@ -1,0 +1,21 @@
+# Data Lifecycle — article summarization prompt
+# Variables: title (str), raw_content (str)
+name: lifecycle_summarize_article
+version: "1.0"
+model_key: triage
+max_tokens: 500  # kept in sync with lifecycle_pipeline.py call_llm(max_tokens=500)
+template: |
+  Tóm tắt bài báo tài chính sau đây thành 200-400 ký tự tiếng Việt.
+  Giữ lại các thông tin quan trọng: số liệu, tên công ty, xu hướng thị trường.
+
+  **Tiêu đề:** {{ title }}
+
+  **Nội dung:**
+  {{ raw_content }}
+
+  **Quy tắc bắt buộc:**
+  - Tóm tắt PHẢI bằng tiếng Việt
+  - Giữ lại tên công ty, mã cổ phiếu, số liệu tài chính cụ thể
+  - Độ dài: 200-400 ký tự
+  - KHÔNG thêm nhận định hoặc thông tin ngoài bài báo
+  - KHÔNG đưa ra khuyến nghị mua/bán
