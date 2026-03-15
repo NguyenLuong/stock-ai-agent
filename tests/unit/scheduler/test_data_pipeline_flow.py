@@ -18,32 +18,35 @@ class TestDataPipelineFlow:
 
     @patch("services.scheduler.flows.data_pipeline.trigger_pipeline", new_callable=AsyncMock)
     async def test_all_steps_succeed(self, mock_trigger):
-        """All steps succeed — summary shows 3 successful, 0 failed."""
+        """All steps succeed — summary shows all successful, 0 failed."""
         mock_trigger.return_value = {"status": "ok"}
 
         result = await data_pipeline_flow.fn()
 
-        assert result["successful_steps"] == 3
+        total = len(PIPELINE_STEPS)
+        assert result["successful_steps"] == total
         assert result["failed_steps"] == 0
-        assert result["total_steps"] == 3
+        assert result["total_steps"] == total
         assert len(result["errors"]) == 0
-        assert mock_trigger.call_count == 3
+        assert mock_trigger.call_count == total
 
     @patch("services.scheduler.flows.data_pipeline.trigger_pipeline", new_callable=AsyncMock)
     async def test_one_step_fails_others_continue(self, mock_trigger):
-        """If crawl fails, embedding and lifecycle still run."""
+        """If crawl fails, remaining steps still run."""
         mock_trigger.side_effect = [
             Exception("network timeout"),  # crawl fails
+            {"status": "ok"},              # stock-crawl succeeds
             {"status": "ok"},              # embedding succeeds
             {"status": "ok"},              # lifecycle succeeds
         ]
 
         result = await data_pipeline_flow.fn()
 
-        assert result["successful_steps"] == 2
+        assert result["successful_steps"] == len(PIPELINE_STEPS) - 1
         assert result["failed_steps"] == 1
         assert "crawl: network timeout" in result["errors"][0]
         assert result["steps"]["crawl"]["status"] == "failed"
+        assert result["steps"]["stock-crawl"]["status"] == "success"
         assert result["steps"]["embedding"]["status"] == "success"
         assert result["steps"]["lifecycle"]["status"] == "success"
 
@@ -54,9 +57,10 @@ class TestDataPipelineFlow:
 
         result = await data_pipeline_flow.fn()
 
+        total = len(PIPELINE_STEPS)
         assert result["successful_steps"] == 0
-        assert result["failed_steps"] == 3
-        assert len(result["errors"]) == 3
+        assert result["failed_steps"] == total
+        assert len(result["errors"]) == total
 
     @patch("services.scheduler.flows.data_pipeline.trigger_pipeline", new_callable=AsyncMock)
     async def test_duration_tracked(self, mock_trigger):

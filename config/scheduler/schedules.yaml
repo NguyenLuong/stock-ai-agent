@@ -21,6 +21,11 @@ flows:
     description: "VnEconomy news crawler"
     enabled: true
 
+  stock_crawl:
+    cron: "0 10 * * 1-5"       # 10:00 UTC = 17:00 VN (after market close)
+    description: "Stock price history crawl - weekdays after market close"
+    enabled: true
+
   data_cleanup:
     cron: "0 2 * * *"          # Daily at 2:00 AM
     description: "30-day rolling window cleanup"

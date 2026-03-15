@@ -84,6 +84,56 @@ async def trigger_crawl(
     }
 
 
+@router.post("/stock-crawl")
+async def trigger_stock_crawl(
+    x_trigger_source: str = Header(default=""),
+) -> dict:
+    """Trigger stock history crawl for all configured tickers."""
+    _validate_trigger_source(x_trigger_source)
+
+    from services.crawler.market_data.stock_crawl_manager import run_stock_crawl
+
+    start = time.monotonic()
+
+    try:
+        result = await run_stock_crawl()
+        duration = round(time.monotonic() - start, 2)
+        logger.info(
+            "stock_crawl_trigger_completed",
+            component="internal_trigger",
+            duration_seconds=duration,
+            success_count=result.success_count,
+        )
+        return {
+            "status": "ok",
+            "duration_seconds": duration,
+            "result": {
+                "total_tickers": result.total_tickers,
+                "success_count": result.success_count,
+                "failed_count": result.failed_count,
+                "initial_count": result.initial_count,
+                "incremental_count": result.incremental_count,
+                "rows_inserted": result.rows_inserted,
+                "duration_seconds": result.duration_seconds,
+                "skipped_reason": result.skipped_reason,
+                "errors": result.errors,
+            },
+        }
+    except Exception as exc:
+        duration = round(time.monotonic() - start, 2)
+        logger.error(
+            "stock_crawl_trigger_failed",
+            component="internal_trigger",
+            duration_seconds=duration,
+            error=str(exc),
+        )
+        return {
+            "status": "failed",
+            "duration_seconds": duration,
+            "error": str(exc),
+        }
+
+
 @router.post("/embedding")
 async def trigger_embedding(
     x_trigger_source: str = Header(default=""),
