@@ -134,6 +134,54 @@ async def trigger_stock_crawl(
         }
 
 
+@router.post("/technical-indicators")
+async def trigger_technical_indicators(
+    x_trigger_source: str = Header(default=""),
+) -> dict:
+    """Trigger technical indicator calculation for all configured tickers."""
+    _validate_trigger_source(x_trigger_source)
+
+    from services.crawler.market_data.indicator_manager import run_indicator_calculation
+
+    start = time.monotonic()
+    try:
+        result = await run_indicator_calculation()
+        duration = round(time.monotonic() - start, 2)
+        logger.info(
+            "indicator_calculation_trigger_completed",
+            component="internal_trigger",
+            duration_seconds=duration,
+            success_count=result.success_count,
+        )
+        return {
+            "status": "ok",
+            "duration_seconds": duration,
+            "result": {
+                "total_tickers": result.total_tickers,
+                "success_count": result.success_count,
+                "failed_count": result.failed_count,
+                "rows_inserted": result.rows_inserted,
+                "indicators_calculated": result.indicators_calculated,
+                "duration_seconds": result.duration_seconds,
+                "skipped_reason": result.skipped_reason,
+                "errors": result.errors,
+            },
+        }
+    except Exception as exc:
+        duration = round(time.monotonic() - start, 2)
+        logger.error(
+            "indicator_calculation_trigger_failed",
+            component="internal_trigger",
+            duration_seconds=duration,
+            error=str(exc),
+        )
+        return {
+            "status": "failed",
+            "duration_seconds": duration,
+            "error": str(exc),
+        }
+
+
 @router.post("/embedding")
 async def trigger_embedding(
     x_trigger_source: str = Header(default=""),

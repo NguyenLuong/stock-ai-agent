@@ -20,6 +20,7 @@ APP_URL = os.environ.get("APP_URL", "http://app:8000")
 PIPELINE_STEPS = [
     ("crawl", "Full news + macro + vnstock crawl"),
     ("stock-crawl", "Stock price history crawl"),
+    ("technical-indicators", "Technical indicator calculation"),
     ("embedding", "Article embedding pipeline"),
     ("lifecycle", "Data lifecycle cleanup"),
 ]

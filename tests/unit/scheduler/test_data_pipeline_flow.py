@@ -36,6 +36,7 @@ class TestDataPipelineFlow:
         mock_trigger.side_effect = [
             Exception("network timeout"),  # crawl fails
             {"status": "ok"},              # stock-crawl succeeds
+            {"status": "ok"},              # technical-indicators succeeds
             {"status": "ok"},              # embedding succeeds
             {"status": "ok"},              # lifecycle succeeds
         ]
@@ -47,6 +48,7 @@ class TestDataPipelineFlow:
         assert "crawl: network timeout" in result["errors"][0]
         assert result["steps"]["crawl"]["status"] == "failed"
         assert result["steps"]["stock-crawl"]["status"] == "success"
+        assert result["steps"]["technical-indicators"]["status"] == "success"
         assert result["steps"]["embedding"]["status"] == "success"
         assert result["steps"]["lifecycle"]["status"] == "success"
 
