@@ -22,6 +22,7 @@ SCHEDULE_TO_FLOW = {
     "crawler_vietstock": "data_pipeline",
     "crawler_cafef": "data_pipeline",
     "crawler_vneconomy": "data_pipeline",
+    "stock_crawl": "data_pipeline",
     "data_cleanup": "data_cleanup",
 }
 

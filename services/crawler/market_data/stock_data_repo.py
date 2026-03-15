@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from shared.db.client import get_async_session
 from shared.db.orm.market_data import MarketData
@@ -85,6 +85,24 @@ async def save_stock_prices(
         component="stock_data_repo",
     )
     return inserted
+
+
+async def count_stock_prices_batch(tickers: list[str]) -> dict[str, int]:
+    """Batch count stock_price rows for multiple tickers."""
+    if not tickers:
+        return {}
+    async with get_async_session() as session:
+        result = await session.execute(
+            select(
+                MarketData.ticker_symbol,
+                func.count(MarketData.id),
+            )
+            .where(MarketData.ticker_symbol.in_(tickers))
+            .where(MarketData.data_type == "stock_price")
+            .group_by(MarketData.ticker_symbol)
+        )
+        counts = {row[0]: row[1] for row in result.all()}
+        return {t: counts.get(t, 0) for t in tickers}
 
 
 async def save_financial_ratios(

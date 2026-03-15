@@ -19,6 +19,7 @@ APP_URL = os.environ.get("APP_URL", "http://app:8000")
 
 PIPELINE_STEPS = [
     ("crawl", "Full news + macro + vnstock crawl"),
+    ("stock-crawl", "Stock price history crawl"),
     ("embedding", "Article embedding pipeline"),
     ("lifecycle", "Data lifecycle cleanup"),
 ]
@@ -28,7 +29,7 @@ PIPELINE_STEPS = [
 async def data_pipeline_flow() -> dict:
     """Orchestrate full data ingestion pipeline.
 
-    Sequence: crawl → embedding → lifecycle.
+    Sequence: crawl → stock-crawl → embedding → lifecycle.
     Each step logs its result independently. Failures are logged but do not
     block subsequent steps.
 

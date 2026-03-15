@@ -1,0 +1,97 @@
+# Stock ticker configuration for crawl pipeline
+# Groups can be enabled/disabled independently.
+# Tickers appearing in multiple groups are deduplicated at load time.
+
+groups:
+  vn30:
+    enabled: true
+    description: "VN30 Index components"
+    tickers:
+      - VNM
+      - VHM
+      - VIC
+      - HPG
+      - MSN
+      - FPT
+      - MWG
+      - VCB
+      - BID
+      - CTG
+      - TCB
+      - MBB
+      - ACB
+      - VPB
+      - SAB
+      - GAS
+      - PLX
+      - VJC
+      - VRE
+      - POW
+      - GVR
+      - SSI
+      - BCM
+      - PDR
+      - KDH
+      - REE
+      - SSB
+      - SHB
+      - TPB
+      - STB
+
+  securities:
+    enabled: true
+    description: "Cong ty chung khoan"
+    tickers:
+      - SSI
+      - VND
+      - HCM
+      - VCI
+      - SHS
+
+  oil_gas:
+    enabled: true
+    description: "Dau khi"
+    tickers:
+      - GAS
+      - PLX
+      - PVD
+      - PVS
+      - BSR
+
+  banking:
+    enabled: true
+    description: "Ngan hang"
+    tickers:
+      - VCB
+      - BID
+      - CTG
+      - TCB
+      - MBB
+      - ACB
+      - VPB
+      - TPB
+      - STB
+      - HDB
+
+  steel:
+    enabled: true
+    description: "Thep"
+    tickers:
+      - HPG
+      - HSG
+      - NKG
+      - TLH
+
+# Variable holidays (Tet Nguyen Dan, Gio To Hung Vuong, nghi bu)
+# Fixed holidays (1/1, 30/4, 1/5, 2/9) are hardcoded in is_trading_day().
+# Only list variable/makeup holidays here — do NOT duplicate fixed holidays.
+# Update this section annually when the government announces the holiday schedule.
+holidays:
+  2026:
+    - "2026-02-16"    # Tet Nguyen Dan
+    - "2026-02-17"    # Tet Nguyen Dan
+    - "2026-02-18"    # Tet Nguyen Dan
+    - "2026-02-19"    # Tet Nguyen Dan
+    - "2026-02-20"    # Tet Nguyen Dan
+    - "2026-04-06"    # Gio To Hung Vuong
+    - "2026-05-03"    # Nghi bu 1/5
