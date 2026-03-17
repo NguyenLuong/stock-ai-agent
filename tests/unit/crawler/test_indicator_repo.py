@@ -10,7 +10,6 @@ import pandas as pd
 import pytest
 
 from services.crawler.market_data.indicator_repo import (
-    get_latest_indicator_date,
     get_stock_prices_df,
     save_technical_indicators,
 )
@@ -33,7 +32,9 @@ class TestSaveTechnicalIndicators:
         """New indicators are inserted into DB."""
         mock_session = AsyncMock()
         mock_result = MagicMock()
-        mock_result.all.return_value = []  # No existing records
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []  # No existing records
+        mock_result.scalars.return_value = mock_scalars
         mock_session.execute.return_value = mock_result
 
         mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -42,19 +43,26 @@ class TestSaveTechnicalIndicators:
         data_as_of = datetime(2026, 3, 14, tzinfo=timezone.utc)
         indicators = _make_indicators()
 
-        inserted = await save_technical_indicators("HPG", indicators, data_as_of)
+        result = await save_technical_indicators("HPG", indicators, data_as_of)
 
-        assert inserted == 3
+        assert result == 3
         assert mock_session.add.call_count == 3
         mock_session.commit.assert_awaited_once()
 
     @patch("services.crawler.market_data.indicator_repo.get_async_session")
-    async def test_skips_existing_indicators(self, mock_get_session) -> None:
-        """Existing indicators (by indicator_name) are not re-inserted."""
+    async def test_skips_existing_same_value(self, mock_get_session) -> None:
+        """Existing indicators with same value are skipped (no update)."""
         mock_session = AsyncMock()
         mock_result = MagicMock()
-        # SMA_20 already exists
-        mock_result.all.return_value = [("SMA_20",)]
+
+        # SMA_20 already exists with same value
+        existing_record = MagicMock()
+        existing_record.indicator_name = "SMA_20"
+        existing_record.indicator_value = Decimal("102.5")
+
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [existing_record]
+        mock_result.scalars.return_value = mock_scalars
         mock_session.execute.return_value = mock_result
 
         mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -63,9 +71,37 @@ class TestSaveTechnicalIndicators:
         data_as_of = datetime(2026, 3, 14, tzinfo=timezone.utc)
         indicators = _make_indicators()
 
-        inserted = await save_technical_indicators("HPG", indicators, data_as_of)
+        result = await save_technical_indicators("HPG", indicators, data_as_of)
 
-        assert inserted == 2  # Only RSI_14 and MACD_LINE
+        assert result == 2  # Only RSI_14 and MACD_LINE inserted
+        assert mock_session.add.call_count == 2
+
+    @patch("services.crawler.market_data.indicator_repo.get_async_session")
+    async def test_updates_existing_different_value(self, mock_get_session) -> None:
+        """Existing indicators with different value are updated."""
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+
+        # SMA_20 exists with different value
+        existing_record = MagicMock()
+        existing_record.indicator_name = "SMA_20"
+        existing_record.indicator_value = Decimal("99.0")
+
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [existing_record]
+        mock_result.scalars.return_value = mock_scalars
+        mock_session.execute.return_value = mock_result
+
+        mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_get_session.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        data_as_of = datetime(2026, 3, 14, tzinfo=timezone.utc)
+        indicators = _make_indicators()
+
+        result = await save_technical_indicators("HPG", indicators, data_as_of)
+
+        assert result == 3  # 1 updated + 2 inserted
+        assert existing_record.indicator_value == Decimal("102.5")
         assert mock_session.add.call_count == 2
 
     @patch("services.crawler.market_data.indicator_repo.get_async_session")
@@ -89,7 +125,9 @@ class TestSaveTechnicalIndicators:
 
         mock_session = AsyncMock()
         mock_result = MagicMock()
-        mock_result.all.return_value = []
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_result.scalars.return_value = mock_scalars
         mock_session.execute.return_value = mock_result
 
         mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -116,7 +154,9 @@ class TestSaveTechnicalIndicators:
         """Naive datetime is converted to UTC-aware."""
         mock_session = AsyncMock()
         mock_result = MagicMock()
-        mock_result.all.return_value = []
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
+        mock_result.scalars.return_value = mock_scalars
         mock_session.execute.return_value = mock_result
 
         mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
@@ -130,41 +170,6 @@ class TestSaveTechnicalIndicators:
         # Verify commit was called (function didn't crash on naive datetime)
         mock_session.commit.assert_awaited_once()
 
-
-class TestGetLatestIndicatorDate:
-    """Tests for get_latest_indicator_date function."""
-
-    @patch("services.crawler.market_data.indicator_repo.get_async_session")
-    async def test_returns_date_when_exists(self, mock_get_session) -> None:
-        """Returns latest data_as_of for existing indicators."""
-        expected_date = datetime(2026, 3, 14, tzinfo=timezone.utc)
-
-        mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.first.return_value = (expected_date,)
-        mock_session.execute.return_value = mock_result
-
-        mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_get_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        result = await get_latest_indicator_date("HPG")
-
-        assert result == expected_date
-
-    @patch("services.crawler.market_data.indicator_repo.get_async_session")
-    async def test_returns_none_when_no_data(self, mock_get_session) -> None:
-        """Returns None when no indicators exist."""
-        mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.first.return_value = None
-        mock_session.execute.return_value = mock_result
-
-        mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_get_session.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        result = await get_latest_indicator_date("HPG")
-
-        assert result is None
 
 
 class TestGetStockPricesDf:

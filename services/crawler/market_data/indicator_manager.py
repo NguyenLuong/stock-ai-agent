@@ -108,6 +108,7 @@ async def run_indicator_calculation() -> IndicatorCalculationResult:
 
     success_count = 0
     failed_count = 0
+    skipped_count = 0
     total_rows = 0
     total_indicators = 0
     errors: list[dict] = []
@@ -116,6 +117,7 @@ async def run_indicator_calculation() -> IndicatorCalculationResult:
         try:
             df_ohlcv = await get_stock_prices_df(ticker, limit=300)
             if df_ohlcv.empty:
+                skipped_count += 1
                 logger.warning(
                     "no_ohlcv_data",
                     ticker=ticker,
@@ -181,6 +183,7 @@ async def run_indicator_calculation() -> IndicatorCalculationResult:
         total_tickers=len(tickers),
         success=success_count,
         failed=failed_count,
+        skipped=skipped_count,
         rows_inserted=total_rows,
         indicators_calculated=total_indicators,
         duration_seconds=duration,

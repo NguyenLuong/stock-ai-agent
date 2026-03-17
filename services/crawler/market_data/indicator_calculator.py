@@ -252,14 +252,25 @@ def _calculate_relative_strength(
     """Calculate Relative Strength of ticker vs VN-Index.
 
     RS = (ticker_close / ticker_close[n_periods_ago]) / (vnindex_close / vnindex_close[n_periods_ago])
+
+    Aligns dates between ticker and VN-Index via inner merge to ensure
+    we compare the same trading days.
     """
     if len(df_ticker) < periods + 1 or len(df_vnindex) < periods + 1:
         return None
 
-    ticker_current = df_ticker["close"].iloc[-1]
-    ticker_past = df_ticker["close"].iloc[-(periods + 1)]
-    vnindex_current = df_vnindex["close"].iloc[-1]
-    vnindex_past = df_vnindex["close"].iloc[-(periods + 1)]
+    # Align on matching dates to avoid comparing different trading days
+    ticker_aligned = df_ticker[["time", "close"]].rename(columns={"close": "ticker_close"})
+    vnindex_aligned = df_vnindex[["time", "close"]].rename(columns={"close": "vnindex_close"})
+    merged = pd.merge(ticker_aligned, vnindex_aligned, on="time", how="inner").sort_values("time")
+
+    if len(merged) < periods + 1:
+        return None
+
+    ticker_current = merged["ticker_close"].iloc[-1]
+    ticker_past = merged["ticker_close"].iloc[-(periods + 1)]
+    vnindex_current = merged["vnindex_close"].iloc[-1]
+    vnindex_past = merged["vnindex_close"].iloc[-(periods + 1)]
 
     if ticker_past == 0 or vnindex_past == 0 or vnindex_current == 0:
         return None

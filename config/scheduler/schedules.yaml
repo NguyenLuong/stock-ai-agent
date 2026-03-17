@@ -26,6 +26,11 @@ flows:
     description: "Stock price history crawl - weekdays after market close"
     enabled: true
 
+  technical_indicators:
+    cron: "30 10 * * 1-5"      # 10:30 UTC = 17:30 VN (after stock_crawl completes)
+    description: "Technical indicator calculation - weekdays after stock crawl"
+    enabled: true
+
   data_cleanup:
     cron: "0 2 * * *"          # Daily at 2:00 AM
     description: "30-day rolling window cleanup"

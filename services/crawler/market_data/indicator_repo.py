@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import select, desc
 
 from shared.db.client import get_async_session
 from shared.db.orm.market_data import MarketData
@@ -30,9 +30,10 @@ async def save_technical_indicators(
     """Save technical indicator records to market_data table.
 
     Each indicator dict has: indicator_name (str), indicator_value (Decimal|None).
-    Implements upsert: skips if (ticker_symbol, data_type, indicator_name, data_as_of) exists.
+    Implements upsert: updates existing records if value changed, inserts new ones.
+    Composite key: (ticker_symbol, data_type, indicator_name, data_as_of).
 
-    Returns number of rows inserted.
+    Returns number of rows inserted + updated.
     """
     if not indicators:
         return 0
@@ -49,28 +50,38 @@ async def save_technical_indicators(
         return 0
 
     inserted = 0
+    updated = 0
     async with get_async_session() as session:
         # Batch-fetch existing records for this ticker+date
         indicator_names = [ind["indicator_name"] for ind in valid_indicators]
         existing_result = await session.execute(
-            select(MarketData.indicator_name).where(
+            select(MarketData).where(
                 MarketData.ticker_symbol == ticker,
                 MarketData.data_type == "technical_indicator",
                 MarketData.data_as_of == data_as_of,
                 MarketData.indicator_name.in_(indicator_names),
             )
         )
-        existing_names = {row[0] for row in existing_result.all()}
+        existing_map = {
+            row.indicator_name: row for row in existing_result.scalars().all()
+        }
 
         for ind in valid_indicators:
-            if ind["indicator_name"] in existing_names:
+            new_value = Decimal(str(ind["indicator_value"]))
+
+            if ind["indicator_name"] in existing_map:
+                existing_record = existing_map[ind["indicator_name"]]
+                if existing_record.indicator_value != new_value:
+                    existing_record.indicator_value = new_value
+                    existing_record.data_source = data_source
+                    updated += 1
                 continue
 
             validated = MarketDataCreate(
                 ticker_symbol=ticker,
                 data_type="technical_indicator",
                 indicator_name=ind["indicator_name"],
-                indicator_value=Decimal(str(ind["indicator_value"])),
+                indicator_value=new_value,
                 data_as_of=data_as_of,
                 data_source=data_source,
             )
@@ -84,41 +95,25 @@ async def save_technical_indicators(
         "technical_indicators_saved",
         ticker=ticker,
         inserted=inserted,
+        updated=updated,
         total_indicators=len(valid_indicators),
         data_as_of=data_as_of.isoformat(),
         component="technical_indicators",
     )
-    return inserted
+    return inserted + updated
 
-
-async def get_latest_indicator_date(ticker: str) -> datetime | None:
-    """Get the most recent data_as_of for technical indicators of a ticker.
-
-    Returns None if no indicators exist for this ticker.
-    """
-    async with get_async_session() as session:
-        result = await session.execute(
-            select(MarketData.data_as_of)
-            .where(
-                MarketData.ticker_symbol == ticker,
-                MarketData.data_type == "technical_indicator",
-            )
-            .order_by(MarketData.data_as_of.desc())
-            .limit(1)
-        )
-        row = result.first()
-        return row[0] if row else None
 
 
 async def get_stock_prices_df(ticker: str, limit: int = 300) -> pd.DataFrame:
-    """Fetch OHLCV data from DB as pandas DataFrame for indicator calculation.
+    """Fetch most recent OHLCV data from DB as pandas DataFrame for indicator calculation.
 
     Returns DataFrame with columns: [time, open, high, low, close, volume]
     sorted by data_as_of ASC (oldest first -- required for pandas-ta).
-    limit=300 provides enough data for MA200 + buffer.
+    limit=300 fetches the 300 most recent rows, enough for MA200 + buffer.
     """
+    # Subquery: get the N most recent rows (DESC), then sort ASC for pandas-ta
     async with get_async_session() as session:
-        result = await session.execute(
+        subquery = (
             select(
                 MarketData.data_as_of,
                 MarketData.open_price,
@@ -129,8 +124,12 @@ async def get_stock_prices_df(ticker: str, limit: int = 300) -> pd.DataFrame:
             )
             .where(MarketData.ticker_symbol == ticker)
             .where(MarketData.data_type == "stock_price")
-            .order_by(MarketData.data_as_of.asc())
+            .order_by(desc(MarketData.data_as_of))
             .limit(limit)
+        ).subquery()
+
+        result = await session.execute(
+            select(subquery).order_by(subquery.c.data_as_of.asc())
         )
         rows = result.all()
 
