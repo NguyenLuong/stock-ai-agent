@@ -3,9 +3,12 @@
 #            rsi (dict with value, period), macd (dict with macd, signal, histogram),
 #            bollinger (dict with upper, middle, lower, current_price),
 #            sma (dict with sma_20, sma_50, sma_200),
-#            volume_analysis (dict with avg_volume, current_volume, ratio)
+#            volume_analysis (dict with avg_volume, current_volume, ratio),
+#            atr (dict with value, period),
+#            donchian (dict with upper, middle, lower, current_price),
+#            relative_strength (dict with value)
 name: technical_analysis_indicators
-version: "1.0"
+version: "2.0"
 model_key: triage
 template: |
   Bạn là Technical Analyst cho thị trường chứng khoán Việt Nam.
@@ -14,10 +17,12 @@ template: |
   **Ngày phân tích:** {{ analysis_date }}
   **Mã cổ phiếu:** {{ ticker }}
 
+  ---
+
   **1. RSI (Relative Strength Index):**
   {% if rsi %}
   - Giá trị: {{ rsi.value }} (Chu kỳ: {{ rsi.period }})
-  - Vùng: {% if rsi.value > 70 %}Quá mua (Overbought){% elif rsi.value < 30 %}Quá bán (Oversold){% else %}Trung tính{% endif %}
+  - Vùng: {% if rsi.value > 70 %}Quá mua (Overbought) — tín hiệu bán tiềm năng{% elif rsi.value < 30 %}Quá bán (Oversold) — tín hiệu mua tiềm năng{% else %}Trung tính (30-70){% endif %}
   {% else %}
   - Không có dữ liệu RSI
   {% endif %}
@@ -28,6 +33,7 @@ template: |
   - Signal Line: {{ macd.signal }}
   - Histogram: {{ macd.histogram }}
   - Tín hiệu: {% if macd.histogram > 0 %}Bullish{% else %}Bearish{% endif %}
+  - MACD vs Signal: {% if macd.macd > macd.signal %}MACD trên Signal (Bullish cross){% elif macd.macd < macd.signal %}MACD dưới Signal (Bearish cross){% else %}MACD bằng Signal (Trung tính){% endif %}
   {% else %}
   - Không có dữ liệu MACD
   {% endif %}
@@ -38,33 +44,97 @@ template: |
   - Middle: {{ bollinger.middle }}
   - Lower: {{ bollinger.lower }}
   - Giá hiện tại: {{ bollinger.current_price }}
+  - Vị trí: {% if bollinger.current_price > bollinger.upper %}Overextended bullish — có thể pullback{% elif bollinger.current_price < bollinger.lower %}Overextended bearish — có thể bounce{% else %}Trong dải Bollinger{% endif %}
   {% else %}
   - Không có dữ liệu Bollinger Bands
   {% endif %}
 
   **4. Đường trung bình (SMA):**
   {% if sma %}
-  - SMA 20: {{ sma.sma_20 }}
-  - SMA 50: {{ sma.sma_50 }}
-  - SMA 200: {{ sma.sma_200 }}
+  - MA20: {{ sma.sma_20 }}
+  - MA50: {{ sma.sma_50 }}
+  - MA200: {{ sma.sma_200 }}
+  - So sánh giá hiện tại:
+    {% if bollinger %}- Giá ({{ bollinger.current_price }}) vs MA20 ({{ sma.sma_20 }}): {% if bollinger.current_price > sma.sma_20 %}Trên MA20{% else %}Dưới MA20{% endif %}
+    - Giá ({{ bollinger.current_price }}) vs MA50 ({{ sma.sma_50 }}): {% if bollinger.current_price > sma.sma_50 %}Trên MA50{% else %}Dưới MA50{% endif %}
+    - Giá ({{ bollinger.current_price }}) vs MA200 ({{ sma.sma_200 }}): {% if bollinger.current_price > sma.sma_200 %}Trên MA200{% else %}Dưới MA200{% endif %}{% elif donchian %}- Giá ({{ donchian.current_price }}) vs MA20 ({{ sma.sma_20 }}): {% if donchian.current_price > sma.sma_20 %}Trên MA20{% else %}Dưới MA20{% endif %}
+    - Giá ({{ donchian.current_price }}) vs MA50 ({{ sma.sma_50 }}): {% if donchian.current_price > sma.sma_50 %}Trên MA50{% else %}Dưới MA50{% endif %}
+    - Giá ({{ donchian.current_price }}) vs MA200 ({{ sma.sma_200 }}): {% if donchian.current_price > sma.sma_200 %}Trên MA200{% else %}Dưới MA200{% endif %}{% else %}- Không có giá hiện tại để so sánh với MA{% endif %}
+  - MA Cross: {% if sma.sma_20 > sma.sma_50 %}MA20 > MA50 (Golden cross ngắn hạn){% else %}MA20 < MA50 (Death cross ngắn hạn){% endif %}
   {% else %}
   - Không có dữ liệu SMA
   {% endif %}
 
-  **5. Khối lượng:**
+  **5. Khối lượng (Volume Analysis):**
   {% if volume_analysis %}
   - TB 20 phiên: {{ volume_analysis.avg_volume }}
   - Phiên hiện tại: {{ volume_analysis.current_volume }}
   - Tỷ lệ: {{ volume_analysis.ratio }}x
+  - Đánh giá: {% if volume_analysis.ratio > 1.5 %}Volume cao — xác nhận tín hiệu{% elif volume_analysis.ratio < 0.5 %}Volume thấp — tín hiệu yếu, cẩn trọng{% else %}Volume bình thường{% endif %}
   {% else %}
   - Không có dữ liệu khối lượng
   {% endif %}
 
-  **Yêu cầu phân tích:**
-  1. Tổng hợp tín hiệu từ tất cả chỉ báo (bullish/bearish/neutral)
-  2. Xác định mức hỗ trợ và kháng cự gần nhất dựa trên Bollinger & SMA
-  3. Đánh giá động lượng (momentum) và xu hướng ngắn hạn
-  4. Mức độ tin cậy của tín hiệu (cao/trung bình/thấp)
+  **6. ATR (Average True Range):**
+  {% if atr %}
+  - Giá trị: {{ atr.value }} (Chu kỳ: {{ atr.period }})
+  - Ý nghĩa: ATR đo lường biến động tuyệt đối — ATR tăng = thị trường active, ATR giảm = consolidation
+  {% else %}
+  - Không có dữ liệu ATR
+  {% endif %}
+
+  **7. Donchian Channel:**
+  {% if donchian %}
+  - Upper (20-day high): {{ donchian.upper }}
+  - Middle: {{ donchian.middle }}
+  - Lower (20-day low): {{ donchian.lower }}
+  - Giá hiện tại: {{ donchian.current_price }}
+  - Tín hiệu: {% if donchian.current_price >= donchian.upper %}Breakout bullish (20-day high mới){% elif donchian.current_price <= donchian.lower %}Breakdown bearish (20-day low mới){% else %}Trong kênh Donchian — không có tín hiệu rõ ràng{% endif %}
+  {% else %}
+  - Không có dữ liệu Donchian Channel
+  {% endif %}
+
+  **8. Relative Strength vs VN-Index:**
+  {% if relative_strength %}
+  - Giá trị RS: {{ relative_strength.value }}
+  - Đánh giá: {% if relative_strength.value > 1.0 %}Cổ phiếu OUTPERFORM VN-Index (RS > 1.0){% elif relative_strength.value == 1.0 %}Cổ phiếu NGANG BẰNG VN-Index (RS = 1.0){% else %}Cổ phiếu UNDERPERFORM VN-Index (RS < 1.0){% endif %}
+  {% else %}
+  - Không có dữ liệu Relative Strength
+  {% endif %}
+
+  ---
+
+  **Yêu cầu phân tích theo 5 chiều:**
+
+  1. **Xu hướng (Trend):**
+     - Phân tích MA cross (MA20/MA50/MA200) — xác định trend ngắn/trung/dài hạn
+     - Đánh giá Donchian breakout/breakdown
+     - Kết luận xu hướng tổng thể
+
+  2. **Momentum:**
+     - RSI: Quá mua (>70) / Quá bán (<30) / Trung tính
+     - MACD: Cross + Histogram direction
+     - Kết luận sức mạnh trend
+
+  3. **Biến động (Volatility):**
+     - ATR: Biến động tuyệt đối — thị trường active hay consolidation
+     - Bollinger width: Biến động tương đối — squeeze hay expanding
+     - Đánh giá mức rủi ro và khả năng breakout
+
+  4. **Sức mạnh tương đối (Relative Strength):**
+     - RS vs VN-Index: Outperform (>1.0) hay Underperform (<1.0)
+     - So sánh hiệu suất cổ phiếu với benchmark thị trường
+
+  5. **Volume Confirmation:**
+     - Volume ratio so với TB 20 phiên
+     - Volume >1.5x = xác nhận tín hiệu mạnh
+     - Volume <0.5x = tín hiệu yếu, cẩn trọng
+     - Kết hợp volume với các tín hiệu từ indicators khác
+
+  **Tổng hợp:**
+  - Xác định mức hỗ trợ và kháng cự gần nhất dựa trên Bollinger, SMA, Donchian
+  - Mức độ tin cậy tổng thể của tín hiệu (cao/trung bình/thấp)
+  - Ghi rõ khi các chỉ báo mâu thuẫn nhau
 
   **Quy tắc bắt buộc:**
   - Chỉ phân tích dữ liệu được cung cấp — KHÔNG tự tạo số liệu

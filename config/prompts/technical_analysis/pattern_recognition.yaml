@@ -2,9 +2,10 @@
 # Variables: ticker (str), analysis_date (str),
 #            ohlcv (list[dict] with date, open, high, low, close, volume),
 #            support_levels (list[float]), resistance_levels (list[float]),
-#            trend (str: uptrend/downtrend/sideways)
+#            trend (str: uptrend/downtrend/sideways),
+#            indicators_summary (str, optional) — tóm tắt từ indicators analysis
 name: technical_analysis_pattern_recognition
-version: "1.0"
+version: "1.1"
 model_key: triage
 template: |
   Bạn là Technical Pattern Analyst cho thị trường chứng khoán Việt Nam.
@@ -21,6 +22,11 @@ template: |
 
   **Mức hỗ trợ:** {% for level in support_levels %}{{ level }}{% if not loop.last %}, {% endif %}{% endfor %}
   **Mức kháng cự:** {% for level in resistance_levels %}{{ level }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+  {% if indicators_summary %}
+  **Tóm tắt chỉ báo kỹ thuật (hỗ trợ xác nhận pattern):**
+  {{ indicators_summary }}
+  {% endif %}
 
   **Yêu cầu phân tích:**
   1. Nhận diện mô hình giá (head & shoulders, double top/bottom, triangle, wedge, flag, cup & handle...)
