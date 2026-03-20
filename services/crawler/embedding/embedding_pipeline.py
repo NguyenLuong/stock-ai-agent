@@ -10,7 +10,7 @@ from shared.llm.embedder import embed_texts
 from shared.logging import get_logger
 from shared.utils.datetime_utils import now_utc
 
-from services.crawler.embedding.models import EmbeddingPipelineResult
+from embedding.models import EmbeddingPipelineResult
 
 logger = get_logger("embedding_pipeline")
 

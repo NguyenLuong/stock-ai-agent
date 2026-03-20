@@ -19,7 +19,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from services.crawler.macro.models import MacroDataResult
+from macro.models import MacroDataResult
 from shared.logging import get_logger
 from shared.utils.datetime_utils import now_utc
 

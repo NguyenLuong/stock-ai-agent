@@ -31,8 +31,8 @@ async def trigger_crawl(
     """Trigger full crawl cycle: news + macro data."""
     _validate_trigger_source(x_trigger_source)
 
-    from services.crawler.news.crawl_manager import run_news_crawl
-    from services.crawler.macro.macro_crawl_manager import run_macro_crawl
+    from news.crawl_manager import run_news_crawl
+    from macro.macro_crawl_manager import run_macro_crawl
 
     start = time.monotonic()
     errors: list[str] = []
@@ -91,7 +91,7 @@ async def trigger_stock_crawl(
     """Trigger stock history crawl for all configured tickers."""
     _validate_trigger_source(x_trigger_source)
 
-    from services.crawler.market_data.stock_crawl_manager import run_stock_crawl
+    from market_data.stock_crawl_manager import run_stock_crawl
 
     start = time.monotonic()
 
@@ -141,7 +141,7 @@ async def trigger_technical_indicators(
     """Trigger technical indicator calculation for all configured tickers."""
     _validate_trigger_source(x_trigger_source)
 
-    from services.crawler.market_data.indicator_manager import run_indicator_calculation
+    from market_data.indicator_manager import run_indicator_calculation
 
     start = time.monotonic()
     try:
@@ -189,7 +189,7 @@ async def trigger_embedding(
     """Trigger article embedding pipeline."""
     _validate_trigger_source(x_trigger_source)
 
-    from services.crawler.embedding.embedding_pipeline import run_embedding_pipeline
+    from embedding.embedding_pipeline import run_embedding_pipeline
 
     start = time.monotonic()
 
@@ -229,7 +229,7 @@ async def trigger_lifecycle(
     """Trigger data lifecycle cleanup pipeline."""
     _validate_trigger_source(x_trigger_source)
 
-    from services.crawler.lifecycle.lifecycle_pipeline import run_lifecycle_pipeline
+    from lifecycle.lifecycle_pipeline import run_lifecycle_pipeline
 
     start = time.monotonic()
 

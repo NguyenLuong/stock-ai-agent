@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import httpx
 
-from services.crawler.macro.macro_data_repo import get_last_macro_fetch_time, save_macro_indicators
-from services.crawler.macro.models import MacroCrawlResult, MacroDataResult
-from services.crawler.macro.sbv_scraper import SBVScraper
-from services.crawler.macro.vnstock_macro_client import VnstockMacroClient
-from services.crawler.middleware.rate_limiter import RateLimitedTransport
-from services.crawler.middleware.robots_checker import RobotsChecker
+from macro.macro_data_repo import get_last_macro_fetch_time, save_macro_indicators
+from macro.models import MacroCrawlResult, MacroDataResult
+from macro.sbv_scraper import SBVScraper
+from macro.vnstock_macro_client import VnstockMacroClient
+from middleware.rate_limiter import RateLimitedTransport
+from middleware.robots_checker import RobotsChecker
 from shared.llm.config_loader import get_sources
 from shared.logging import get_logger
 

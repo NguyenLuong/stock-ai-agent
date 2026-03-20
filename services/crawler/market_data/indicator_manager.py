@@ -14,13 +14,13 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 
-from services.crawler.market_data.indicator_calculator import calculate_indicators
-from services.crawler.market_data.indicator_repo import (
+from market_data.indicator_calculator import calculate_indicators
+from market_data.indicator_repo import (
     get_stock_prices_df,
     save_technical_indicators,
 )
-from services.crawler.market_data.stock_crawl_manager import is_trading_day
-from services.crawler.market_data.ticker_config import load_ticker_config
+from market_data.stock_crawl_manager import is_trading_day
+from market_data.ticker_config import load_ticker_config
 from shared.logging import get_logger
 from shared.utils.datetime_utils import now_utc
 

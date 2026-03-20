@@ -1,0 +1,637 @@
+# Data Pipeline Guide — stock-ai-agent
+
+## 1. Tổng Quan Architecture
+
+### Sơ Đồ Luồng Dữ Liệu
+
+```
+[Prefect Scheduler] ── cron triggers ──> [FastAPI Internal Endpoints]
+    │
+    ├── /internal/trigger/crawl
+    │       ├── News Crawlers (Vietstock, CafeF, VnEconomy)
+    │       │       ↓ RSS feeds → parse HTML → extract tickers
+    │       │   [articles table] ── dedup by URL
+    │       │
+    │       └── Macro Crawlers (VN-Index, USD/VND, Foreign Flow, SBV Rate)
+    │               ↓ vnstock API + sbv.gov.vn scraping
+    │           [market_data table] ── data_type = "macro"
+    │
+    ├── /internal/trigger/stock-crawl
+    │       └── vnstock Client → OHLCV cho ~44 tickers
+    │           [market_data table] ── data_type = "stock_price"
+    │
+    ├── /internal/trigger/technical-indicators
+    │       └── Indicator Calculator (pandas-ta) → 10 indicators
+    │           [market_data table] ── data_type = "technical_indicator"
+    │
+    ├── /internal/trigger/embedding
+    │       └── Embedding Pipeline → OpenAI text-embedding-3-small (1536-dim)
+    │           [articles.embedding] ── pgvector HNSW index
+    │
+    └── /internal/trigger/lifecycle (daily 2:00 AM)
+            └── Lifecycle Pipeline
+                    ├── Summary (gpt-4o-mini) → articles.summary
+                    └── Clear raw_content (>30 ngày)
+```
+
+### Bảng Tổng Hợp Các Crawler
+
+| Crawler | Source | Schedule (UTC) | Rate Limit | Output Table | Ghi Chú |
+|---------|--------|----------------|------------|--------------|---------|
+| Vietstock | 2 RSS feeds | `0 6,12,18 * * *` | 1 RPS | articles | Dedup by URL |
+| CafeF | 2 RSS feeds | `0 6,12,18 * * *` | 1 RPS | articles | Dedup by URL |
+| VnEconomy | 1 RSS feed | `0 7,13,19 * * *` | 1 RPS | articles | Dedup by URL |
+| VN-Index | vnstock API (VCI) | `30 9,14 * * 1-5` | Retry 3 lần | market_data | close + volume |
+| USD/VND | vnstock API (MSN) | `0 9 * * 1-5` | Retry 3 lần | market_data | Tỷ giá |
+| Foreign Flow | vnstock (mock) | `0 16 * * 1-5` | — | market_data | Luôn trả mock data |
+| SBV Rate | sbv.gov.vn scraping | `0 8 * * 1` | 1 RPS | market_data | Hàng tuần thứ Hai |
+| Stock Prices | vnstock API (VCI) | `0 10 * * 1-5` | 1s giữa tickers | market_data | ~44 tickers |
+| Tech Indicators | pandas-ta calc | `30 10 * * 1-5` | 0.1s giữa tickers | market_data | 10 indicators |
+| Embedding | OpenAI API | Sau crawl | Batch 100 | articles.embedding | 1536-dim vector |
+| Lifecycle | gpt-4o-mini | `0 2 * * *` | Batch 50 | articles.summary | >30 ngày |
+
+### Database Schema Tổng Quan
+
+- **articles** — Lưu bài viết tin tức tài chính (Vietstock, CafeF, VnEconomy)
+- **market_data** — Lưu giá cổ phiếu, chỉ số macro, technical indicators
+
+---
+
+## 2. News Crawlers
+
+### 2.1 Vietstock
+
+**Source:** `services/crawler/news/vietstock_crawler.py`
+
+**RSS Feeds:**
+- `https://vietstock.vn/rss/tai-chinh.rss`
+- `https://vietstock.vn/rss/chung-khoan.rss`
+
+**Schedule:** `0 6,12,18 * * *` — 3 lần/ngày lúc 6:00, 12:00, 18:00 UTC (13:00, 19:00, 01:00 VN)
+
+**Cách hoạt động:**
+1. Fetch RSS XML từ 2 feeds
+2. Parse mỗi `<item>`: lấy title, link, pubDate, description
+3. Kiểm tra robots.txt trước khi fetch full article
+4. Fetch HTML article page qua HTTP client (timeout 30s)
+5. Parse nội dung bằng CSS selectors theo thứ tự ưu tiên:
+   - `div.content-detail` → `div.article-content` → `div#content-detail` → `<article>` → fallback (div có nhiều `<p>` nhất)
+6. Extract ticker symbols từ text (pattern: 3 chữ cái viết hoa `[A-Z]{3}`, loại trừ false positives như USD, VND, GDP, CPI...)
+7. Dedup bằng URL — bài đã tồn tại sẽ bị skip
+
+**Output:** Bảng `articles` — columns: source="vietstock", ticker_symbol, title, url (unique), published_at, raw_content
+
+### 2.2 CafeF
+
+**Source:** `services/crawler/news/cafef_crawler.py`
+
+**RSS Feeds:**
+- `https://cafef.vn/rss/trang-chu.rss`
+- `https://cafef.vn/rss/thi-truong-chung-khoan.rss`
+
+**Schedule:** `0 6,12,18 * * *` — cùng lịch với Vietstock
+
+**Cách hoạt động:** Tương tự Vietstock, chỉ khác CSS selectors:
+- `div.detail-content` → `div#mainContent` → `div.contentdetail` → `<article>` → fallback
+
+**Output:** Bảng `articles` — source="cafef"
+
+### 2.3 VnEconomy
+
+**Source:** `services/crawler/news/vneconomy_crawler.py`
+
+**RSS Feed:**
+- `https://vneconomy.vn/rss/chung-khoan.rss`
+
+**Schedule:** `0 7,13,19 * * *` — 3 lần/ngày lúc 7:00, 13:00, 19:00 UTC
+
+**CSS selectors:**
+- `div.detail__content` → `div.article-body` → `div.content-detail` → `<article>` → fallback
+
+**Output:** Bảng `articles` — source="vneconomy"
+
+### 2.4 Crawl Manager & Rate Limiting
+
+**Source:** `services/crawler/news/crawl_manager.py`
+
+**Cơ chế thực thi:**
+1. Load config từ `config/crawlers/sources.yaml`
+2. Chạy từng crawler **tuần tự** (vietstock → cafef → vneconomy)
+3. Mỗi source có HTTP client riêng với `RateLimitedTransport`
+4. Sau khi crawl xong tất cả sources, gọi `save_articles()` để lưu vào DB
+
+**Rate Limiting (RateLimitedTransport):**
+- Source: `services/crawler/middleware/rate_limiter.py`
+- Mechanism: Per-domain rate limiting dùng `pyrate_limiter.Limiter`
+- Default: 1 request/second/domain
+- Cấu hình qua `rate_limit_rps` trong `sources.yaml`
+
+**Robots.txt Compliance:**
+- Source: `services/crawler/middleware/robots_checker.py`
+- Kiểm tra robots.txt trước mỗi request
+- Cache per-domain, TTL = 86400 giây (24 giờ)
+- User-Agent: `StockAIAgent/1.0`
+- Nếu fetch robots.txt fail → cho phép request (permissive)
+
+**Deduplication (Article Repo):**
+- Source: `services/crawler/news/article_repo.py`
+- Batch query URLs đã tồn tại: `SELECT url FROM articles WHERE url IN (...)`
+- Chỉ insert bài mới (URL chưa có trong DB)
+- Constraint unique trên column `url`
+
+**HTTP Client Config:**
+- Timeout: 30 giây
+- User-Agent: `StockAIAgent/1.0`
+
+---
+
+## 3. Macro Data Crawler
+
+**Source:** `services/crawler/macro/macro_crawl_manager.py`
+
+Macro crawler thu thập 4 loại chỉ số kinh tế vĩ mô, chạy **tuần tự** với cơ chế **graceful degradation** — nếu 1 source fail, các source khác vẫn tiếp tục.
+
+### 3.1 VN-Index
+
+**Source:** `services/crawler/macro/vnstock_macro_client.py`
+
+**Schedule:** `30 9,14 * * 1-5` — 2 lần/ngày trading days lúc 9:30, 14:00 UTC
+
+**Cách hoạt động:**
+- Gọi vnstock API, quote source = `VCI`, history length = `1M`, interval = `1D`
+- Trả về 2 giá trị: **close price** và **volume** của VN-Index
+- Lưu vào `market_data` với `data_type="macro"`, `indicator_name="vn_index_close"` / `"vn_index_volume"`
+
+**Fallback:** Mock data — vn_index_close: 1250.0, vn_index_volume: 500,000,000
+
+**Retry:** Exponential backoff (min 1s, max 10s), tối đa 3 lần, retry trên ConnectionError/TimeoutError/OSError
+
+### 3.2 Tỷ Giá USD/VND
+
+**Source:** `services/crawler/macro/vnstock_macro_client.py`
+
+**Schedule:** `0 9 * * 1-5` — hàng ngày trading days lúc 9:00 UTC
+
+**Cách hoạt động:**
+- Gọi vnstock FX API, source = `MSN`, symbol = `USDVND`, history = `1M`, interval = `1D`
+- Lưu indicator_name = `"usd_vnd_rate"`
+
+**Fallback:** Mock data — usd_vnd_rate: 25,850.0
+
+### 3.3 Dòng Vốn Ngoại
+
+**Source:** `services/crawler/macro/vnstock_macro_client.py`
+
+**Schedule:** `0 16 * * 1-5` — hàng ngày trading days lúc 16:00 UTC
+
+**Lưu ý:** vnstock chưa hỗ trợ foreign flow aggregation → **luôn trả mock data** (data_source="mock")
+- indicator_name = `"foreign_net_flow"`, giá trị = 0.0
+
+### 3.4 Lãi Suất SBV
+
+**Source:** `services/crawler/macro/sbv_scraper.py`
+
+**Schedule:** `0 8 * * 1` — hàng tuần thứ Hai lúc 8:00 UTC
+
+**Cách hoạt động:**
+1. Kiểm tra robots.txt trên `https://www.sbv.gov.vn`
+2. Fetch trang chủ SBV
+3. Tìm lãi suất tái cấp vốn bằng 2 strategy:
+   - **Strategy 1:** Tìm trong HTML tables chứa keywords ("lãi suất tái cấp vốn", "refinancing rate"...)
+   - **Strategy 2:** Tìm trong full text, extract số % trong window 150 ký tự quanh keyword
+4. Validate: 0 < giá trị ≤ 50
+5. Lưu indicator_name = `"sbv_interest_rate"`
+
+**Rate limit:** 1 RPS, base URL: `https://www.sbv.gov.vn`
+
+### 3.5 Macro Crawl Sequence & Graceful Degradation
+
+**Thứ tự thực thi tuần tự:**
+1. VN-Index (close + volume)
+2. USD/VND exchange rate
+3. Foreign net flow
+4. SBV interest rate
+
+**Graceful degradation:**
+- Mỗi source chạy trong try/except riêng
+- Source fail → log warning → tiếp tục source tiếp theo
+- Kết quả thành công được save ngay
+- Nếu tất cả sources fail → log cảnh báo AC3
+
+---
+
+## 4. Stock History (vnstock Client)
+
+### 4.1 Initial Load vs Incremental
+
+**Source:** `services/crawler/market_data/stock_crawl_manager.py`
+
+**Schedule:** `0 10 * * 1-5` — hàng ngày trading days lúc 10:00 UTC (17:00 VN, sau khi thị trường đóng cửa)
+
+**Logic phân loại:**
+- Đếm rows hiện có cho mỗi ticker trong DB
+- `INITIAL_THRESHOLD = 30` rows
+- Ticker < 30 rows → **Initial load**: fetch `1Y` (1 năm) dữ liệu
+- Ticker ≥ 30 rows → **Incremental load**: fetch `1b` (1 ngày giao dịch gần nhất)
+
+**Ngày không giao dịch:**
+- Chỉ chạy initial load cho tickers mới
+- Skip incremental load (không có dữ liệu mới)
+
+**Rate limit:** `asyncio.sleep(1.0)` — 1 giây giữa mỗi ticker
+
+### 4.2 Ticker Configuration
+
+**Source:** `services/crawler/market_data/ticker_config.py`
+**Config:** `config/crawlers/stock_tickers.yaml`
+
+**Các nhóm ticker:**
+
+| Nhóm | Mô Tả | Số Lượng | Ví Dụ |
+|------|--------|----------|-------|
+| vn30 | VN30 Index components | 30 | VNM, VHM, VIC, HPG, FPT, VCB... |
+| securities | Công ty chứng khoán | 5 | SSI, VND, HCM, VCI, SHS |
+| oil_gas | Dầu khí | 5 | GAS, PLX, PVD, PVS, BSR |
+| banking | Ngân hàng | 10 | VCB, BID, CTG, TCB, MBB... |
+| steel | Thép | 4 | HPG, HSG, NKG, TLH |
+
+**Deduplication:** Ticker xuất hiện trong nhiều nhóm (VD: HPG ở vn30 + steel, VCB ở vn30 + banking) sẽ được deduplicate → ~44 tickers duy nhất.
+
+**Validation:** Pattern `^[A-Z]{3,4}$` — 3-4 chữ cái viết hoa. Ticker không hợp lệ sẽ bị skip với warning.
+
+### 4.3 Trading Day Detection
+
+**Source:** `services/crawler/market_data/stock_crawl_manager.py`
+
+Hàm `is_trading_day()` kiểm tra:
+1. **Cuối tuần:** Thứ 7, Chủ nhật → không giao dịch
+2. **Ngày lễ cố định (hardcoded):**
+   - 1/1 — Tết Dương lịch
+   - 30/4 — Ngày Giải phóng
+   - 1/5 — Quốc tế Lao động
+   - 2/9 — Quốc khánh
+3. **Ngày lễ thay đổi (từ config):** `config/crawlers/stock_tickers.yaml`
+   - VD năm 2026: Tết Nguyên Đán (16-20/2), Giỗ Tổ Hùng Vương (6/4), Nghỉ bù 1/5 (3/5)
+
+### 4.4 vnstock Client
+
+**Source:** `services/crawler/market_data/vnstock_client.py`
+
+**Quote source:** `VCI` (mặc định cho price data)
+**Finance source:** `KBS` (mặc định cho BCTC)
+
+**Retry config:** Exponential backoff (min 1s, max 10s), tối đa 3 lần
+
+**Mock fallback:** Nếu API fail sau 3 lần retry → trả mock data với `data_source="mock"`, log warning
+
+**Methods chính:**
+- `aget_stock_history(ticker, length, interval)` — OHLCV data
+- `aget_financial_ratios(ticker)` — P/E, P/B, ROE, EPS
+- `aget_income_statement(ticker)` — Báo cáo thu nhập
+- `aget_balance_sheet(ticker)` — Bảng cân đối kế toán
+
+---
+
+## 5. Technical Indicators Calculator
+
+**Source:** `services/crawler/market_data/indicator_calculator.py`, `indicator_manager.py`
+
+**Schedule:** `30 10 * * 1-5` — hàng ngày trading days lúc 10:30 UTC (17:30 VN, sau stock crawl 30 phút)
+
+### Flow Tính Toán
+
+1. Load ticker config (~44 tickers)
+2. Kiểm tra trading day — skip nếu không giao dịch
+3. Fetch VN-Index OHLCV (300 rows gần nhất) cho tính RS
+4. Với mỗi ticker:
+   - Fetch OHLCV data (300 rows)
+   - Tính 10 indicators bằng `pandas-ta`
+   - Lưu vào `market_data` với `data_type="technical_indicator"`, `data_source="calculated"`
+   - Sleep 0.1s (100ms) giữa tickers
+
+### 10 Indicators
+
+| Indicator | Mô Tả | Min Data |
+|-----------|--------|----------|
+| SMA_20 | Simple Moving Average 20 phiên | 20 |
+| SMA_50 | Simple Moving Average 50 phiên | 50 |
+| SMA_200 | Simple Moving Average 200 phiên | 200 |
+| RSI_14 | Relative Strength Index (length=14) | 15 |
+| MACD_LINE, MACD_SIGNAL, MACD_HISTOGRAM | MACD (fast=12, slow=26, signal=9) | 35 |
+| VOLUME_AVG_20, VOLUME_CURRENT, VOLUME_RATIO | Volume Profile (MA 20) | 20 |
+| ATR_14 | Average True Range (length=14) | 15 |
+| BB_LOWER, BB_MIDDLE, BB_UPPER | Bollinger Bands (length=20, std=2) | 20 |
+| DC_LOWER, DC_MIDDLE, DC_UPPER | Donchian Channels (length=20) | 20 |
+| RS_VNINDEX | Relative Strength vs VN-Index (20 phiên) | 20 |
+
+**Logic tính toán:**
+- Chỉ lấy giá trị ngày gần nhất (`iloc[-1]`) từ OHLCV DataFrame
+- Làm tròn 6 chữ số thập phân
+- RS_VNINDEX: align dates giữa ticker và VN-Index, so sánh cùng ngày giao dịch
+- Nếu data không đủ minimum periods → skip indicator đó, log warning
+
+---
+
+## 6. Article Embedding Pipeline
+
+**Source:** `services/crawler/embedding/embedding_pipeline.py`, `shared/llm/embedder.py`
+
+**Trigger:** `POST /internal/trigger/embedding` — chạy sau crawl trong pipeline flow
+
+### Cách Hoạt Động
+
+1. Query articles có `embedded=FALSE`
+2. Chuẩn bị text: `title + "\n\n" + raw_content` (hoặc summary nếu raw_content đã bị xóa)
+3. Skip bài không có content (log warning)
+4. Gọi OpenAI API embed theo batch:
+   - **Model:** `text-embedding-3-small`
+   - **Dimension:** 1536
+   - **Batch size:** 100 (mặc định)
+5. Update article: gán `embedding` vector + set `embedded=True`
+6. Commit changes
+
+**Retry config (OpenAI):** Exponential backoff (1-10s), 3 lần, retry trên RateLimitError/APITimeoutError/APIConnectionError
+
+**pgvector Index:** HNSW (m=16, ef_construction=64), operator: `vector_cosine_ops`
+
+---
+
+## 7. Data Lifecycle Management
+
+**Source:** `services/crawler/lifecycle/lifecycle_pipeline.py`
+
+**Schedule:** `0 2 * * *` — hàng ngày lúc 2:00 AM UTC
+
+### Cách Hoạt Động
+
+1. Query articles có `published_at` > 30 ngày **VÀ** còn `raw_content`
+2. Giới hạn tối đa 1000 bài/lần chạy
+3. Xử lý theo batch 50 bài:
+   - Skip nếu đã có summary
+   - Gọi LLM tạo summary tiếng Việt
+   - Lưu summary, **xóa raw_content** (set None)
+   - **Giữ nguyên** embedding vector và flag embedded
+4. Commit sau mỗi batch (rollback batch nếu fail, tiếp tục batch tiếp)
+
+**LLM Config:**
+- Model: `gpt-4o-mini`
+- Temperature: 0.3
+- Max tokens: 500
+- Prompt template: `lifecycle/summarize_article`
+
+**Kết quả:** Bài >30 ngày sẽ chỉ còn title, summary, embedding — raw_content bị xóa để tiết kiệm storage.
+
+---
+
+## 8. Prefect Scheduler
+
+**Source:** `services/scheduler/flows/data_pipeline.py`
+**Config:** `config/scheduler/schedules.yaml`
+
+### 8.1 Schedule Overview
+
+| Flow | Cron (UTC) | Giờ VN | Mô Tả | Enabled |
+|------|-----------|--------|--------|---------|
+| crawler_vietstock | `0 6,12,18 * * *` | 13:00, 19:00, 01:00 | News crawl Vietstock | true |
+| crawler_cafef | `0 6,12,18 * * *` | 13:00, 19:00, 01:00 | News crawl CafeF | true |
+| crawler_vneconomy | `0 7,13,19 * * *` | 14:00, 20:00, 02:00 | News crawl VnEconomy | true |
+| stock_crawl | `0 10 * * 1-5` | 17:00 | Stock prices (sau đóng cửa) | true |
+| technical_indicators | `30 10 * * 1-5` | 17:30 | Indicators (sau stock crawl) | true |
+| data_cleanup | `0 2 * * *` | 09:00 | Lifecycle cleanup | true |
+| morning_briefing | `0 7 * * 1-5` | 14:00 | Morning briefing | **false** |
+
+### 8.2 Pipeline Flow
+
+Flow `data-pipeline` chạy 5 bước **tuần tự**:
+
+```
+crawl → stock-crawl → technical-indicators → embedding → lifecycle
+```
+
+Mỗi bước gọi HTTP POST đến Internal API. Nếu 1 bước fail → log error → tiếp tục bước tiếp (không block pipeline).
+
+Flow `data-cleanup` chạy riêng lúc 2:00 AM — chỉ trigger lifecycle endpoint.
+
+### 8.3 Internal API Triggers
+
+**Source:** `services/app/routers/internal.py`
+**Prefix:** `/internal/trigger`
+**Authentication:** Header `X-Trigger-Source: prefect-scheduler` (bắt buộc, trả 403 nếu thiếu)
+
+| Endpoint | Method | Mô Tả |
+|----------|--------|--------|
+| `/internal/trigger/crawl` | POST | News crawl + Macro crawl |
+| `/internal/trigger/stock-crawl` | POST | Stock history crawl |
+| `/internal/trigger/technical-indicators` | POST | Technical indicator calculation |
+| `/internal/trigger/embedding` | POST | Article embedding |
+| `/internal/trigger/lifecycle` | POST | Data lifecycle cleanup |
+
+**Kết nối:** Prefect scheduler gọi qua `APP_URL` (default: `http://app:8000`).
+
+### 8.4 Monitoring
+
+- **Prefect UI:** Dashboard theo dõi flow runs, task states, logs
+- **Logs:** Structured JSON logging với component prefix (VD: `crawler.vietstock`, `macro.vnindex`)
+- **Retry:** Mỗi pipeline step có error handling riêng, không retry ở scheduler level
+- **Kết quả:** Mỗi endpoint trả JSON response với status, duration_seconds, và chi tiết kết quả
+
+---
+
+## 9. Verification Guide
+
+### 9.1 News Articles
+
+```sql
+-- Đếm bài theo source (24 giờ gần nhất)
+SELECT source, COUNT(*) FROM articles
+WHERE published_at > NOW() - INTERVAL '24 hours'
+GROUP BY source;
+
+-- Kiểm tra freshness
+SELECT source, MAX(published_at) as latest, NOW() - MAX(published_at) as age
+FROM articles GROUP BY source;
+
+-- Kiểm tra embedding status
+SELECT source, embedded, COUNT(*) FROM articles
+GROUP BY source, embedded ORDER BY source;
+```
+
+**Expected patterns:**
+- Mỗi source (vietstock, cafef, vneconomy) nên có bài mới mỗi 6-7 giờ
+- `published_at` age không nên > 24 giờ cho ngày bình thường
+- `embedded=TRUE` ratio nên cao (>90% cho bài >1 giờ tuổi)
+
+### 9.2 Macro Indicators
+
+```sql
+-- Chỉ số macro mới nhất
+SELECT ticker_symbol, indicator_name, indicator_value, data_as_of, data_source
+FROM market_data
+WHERE data_type = 'macro'
+ORDER BY data_as_of DESC LIMIT 10;
+
+-- Kiểm tra từng loại macro
+SELECT indicator_name, COUNT(*), MAX(data_as_of) as latest,
+       NOW() - MAX(data_as_of) as age
+FROM market_data
+WHERE data_type = 'macro'
+GROUP BY indicator_name;
+```
+
+**Expected patterns:**
+- `vn_index_close`, `vn_index_volume`: cập nhật 2 lần/ngày trading days
+- `usd_vnd_rate`: cập nhật hàng ngày trading days
+- `foreign_net_flow`: data_source="mock" (chưa có real data)
+- `sbv_interest_rate`: cập nhật hàng tuần thứ Hai
+
+### 9.3 Stock Prices
+
+```sql
+-- Row counts theo ticker
+SELECT ticker_symbol, COUNT(*), MAX(data_as_of) as latest
+FROM market_data
+WHERE data_type = 'stock_price'
+GROUP BY ticker_symbol
+ORDER BY ticker_symbol;
+
+-- Kiểm tra OHLCV completeness cho 1 ticker
+SELECT ticker_symbol, data_as_of,
+       open_price, high_price, low_price, close_price, volume
+FROM market_data
+WHERE data_type = 'stock_price' AND ticker_symbol = 'VNM'
+ORDER BY data_as_of DESC LIMIT 5;
+
+-- Tickers thiếu dữ liệu gần đây
+SELECT ticker_symbol, MAX(data_as_of) as latest,
+       NOW() - MAX(data_as_of) as age
+FROM market_data
+WHERE data_type = 'stock_price'
+GROUP BY ticker_symbol
+HAVING NOW() - MAX(data_as_of) > INTERVAL '3 days'
+ORDER BY age DESC;
+```
+
+**Expected patterns:**
+- Mỗi ticker nên có ≥30 rows sau initial load (1 năm data)
+- `data_as_of` latest nên là ngày giao dịch gần nhất
+- OHLCV: tất cả 5 columns phải NOT NULL cho stock_price records
+
+### 9.4 Technical Indicators
+
+```sql
+-- Đếm indicators theo tên
+SELECT indicator_name, COUNT(DISTINCT ticker_symbol) as tickers,
+       MAX(data_as_of) as latest
+FROM market_data
+WHERE data_type = 'technical_indicator'
+GROUP BY indicator_name
+ORDER BY indicator_name;
+
+-- Kiểm tra indicators cho 1 ticker cụ thể
+SELECT indicator_name, indicator_value, data_as_of
+FROM market_data
+WHERE data_type = 'technical_indicator'
+  AND ticker_symbol = 'VNM'
+  AND data_as_of = (
+    SELECT MAX(data_as_of) FROM market_data
+    WHERE data_type = 'technical_indicator' AND ticker_symbol = 'VNM'
+  )
+ORDER BY indicator_name;
+```
+
+**Expected patterns:**
+- ~44 tickers × lên đến 18 indicator values (MACD có 3, Volume có 3, BB có 3, DC có 3)
+- SMA_200 có thể thiếu cho tickers mới (cần ≥200 phiên data)
+- RS_VNINDEX cần data VN-Index — nếu thiếu sẽ bị skip
+
+### 9.5 Embeddings
+
+```sql
+-- Tỷ lệ embedded
+SELECT embedded, COUNT(*) as count,
+       ROUND(COUNT(*)::numeric / SUM(COUNT(*)) OVER() * 100, 1) as percentage
+FROM articles GROUP BY embedded;
+
+-- Kiểm tra vector dimension
+SELECT id, title, array_length(embedding::real[], 1) as dim
+FROM articles
+WHERE embedded = TRUE
+LIMIT 5;
+
+-- Bài chưa embedded (cần xử lý)
+SELECT id, title, source, published_at, created_at
+FROM articles
+WHERE embedded = FALSE
+ORDER BY created_at DESC LIMIT 10;
+```
+
+**Expected patterns:**
+- Vector dimension phải = 1536
+- Bài mới có thể chưa embedded (chờ pipeline chạy)
+- Embedded ratio nên >95% cho bài >1 giờ tuổi
+
+---
+
+## 10. Troubleshooting Guide
+
+### 10.1 Crawl Failures
+
+**Triệu chứng:** Không có bài mới trong `articles` table
+
+**Nguyên nhân & Cách xử lý:**
+
+| Vấn Đề | Log Pattern | Cách Xử Lý |
+|---------|-------------|-------------|
+| Network error | `httpx.ConnectError` | Kiểm tra network connectivity, DNS resolution |
+| Rate limit exceeded | HTTP 429, `httpx.HTTPStatusError` | Giảm `rate_limit_rps` trong `sources.yaml`, chờ 1 giờ |
+| robots.txt blocked | `URL disallowed by robots.txt` | Kiểm tra `https://{domain}/robots.txt`, cập nhật User-Agent nếu cần |
+| RSS feed thay đổi | Parse error, empty items | Kiểm tra RSS feed URL còn hoạt động, cập nhật URL trong `sources.yaml` |
+| HTML structure thay đổi | Article body rỗng | Cập nhật CSS selectors trong crawler tương ứng |
+| Timeout | `httpx.TimeoutException` | Tăng timeout (hiện tại 30s) hoặc kiểm tra target site |
+
+### 10.2 Missing Data
+
+**Triệu chứng:** Data không cập nhật đúng lịch
+
+| Vấn Đề | Kiểm Tra | Cách Xử Lý |
+|---------|----------|-------------|
+| Không có bài mới | `SELECT MAX(published_at) FROM articles WHERE source='...'` | Kiểm tra RSS feeds, crawl logs |
+| Stale macro data | `SELECT MAX(data_as_of) FROM market_data WHERE data_type='macro'` | Kiểm tra vnstock API, SBV site |
+| Skipped trading day | Log: `Non-trading day, skipping incremental` | Bình thường — chỉ crawl vào ngày giao dịch |
+| Ticker bị skip | Log: `Invalid ticker format` | Kiểm tra `stock_tickers.yaml`, pattern `^[A-Z]{3,4}$` |
+| Mock data thay vì real | `data_source='mock'` trong market_data | vnstock API fail — kiểm tra connectivity, API status |
+
+### 10.3 Embedding Failures
+
+**Triệu chứng:** `embedded=FALSE` tỷ lệ cao
+
+| Vấn Đề | Kiểm Tra | Cách Xử Lý |
+|---------|----------|-------------|
+| OpenAI API error | Log: `RateLimitError`, `APITimeoutError` | Kiểm tra API key, quota, billing |
+| Batch size quá lớn | Log: `APIConnectionError` | Giảm batch_size (default 100) |
+| Không có content | Log: `Skipping article — no content` | Bài chưa có raw_content (crawl fail trước đó) |
+| API key missing | `OPENAI_API_KEY` not set | Set environment variable trong Docker/`.env` |
+
+### 10.4 Scheduler Issues
+
+**Triệu chứng:** Pipeline không chạy đúng lịch
+
+| Vấn Đề | Kiểm Tra | Cách Xử Lý |
+|---------|----------|-------------|
+| Prefect flow stuck | Prefect UI → Flow Runs → check state | Cancel flow run, investigate logs |
+| Missed schedule | Prefect UI → Deployments → check schedule | Verify cron expression, timezone, container uptime |
+| Container restart | `docker logs scheduler` | Kiểm tra OOM, disk space, health checks |
+| App unreachable | Log: `ConnectError` từ scheduler | Kiểm tra app container running, network `http://app:8000` |
+| Auth failed | HTTP 403 từ internal endpoints | Verify header `X-Trigger-Source: prefect-scheduler` |
+
+### 10.5 Database Issues
+
+**Triệu chứng:** Lỗi khi read/write data
+
+| Vấn Đề | Kiểm Tra | Cách Xử Lý |
+|---------|----------|-------------|
+| Connection pool exhausted | Log: `TimeoutError` on DB connect | Tăng pool size, kiểm tra connection leaks |
+| pgvector index issues | Slow semantic search queries | `REINDEX INDEX idx_articles_embedding_hnsw;` |
+| Disk space | `df -h` trên DB server | Clean old data, tăng disk, chạy lifecycle pipeline |
+| Migration mismatch | Alembic version mismatch | `alembic upgrade head` |
+| Duplicate key | `IntegrityError` on insert | Bình thường cho articles (dedup by URL) |

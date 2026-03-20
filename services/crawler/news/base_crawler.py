@@ -16,7 +16,7 @@ from shared.models.article import ArticleCreate
 from shared.utils.datetime_utils import now_utc
 from shared.utils.text_utils import normalize_whitespace
 
-from services.crawler.middleware.robots_checker import RobotsChecker
+from middleware.robots_checker import RobotsChecker
 
 # Vietnamese stock tickers: 3 uppercase letters
 _TICKER_PATTERN = re.compile(r"\b([A-Z]{3})\b")

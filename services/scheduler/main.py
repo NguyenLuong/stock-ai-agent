@@ -5,8 +5,8 @@ import signal
 
 from prefect import serve
 
-from services.scheduler.config_loader import load_schedules
-from services.scheduler.flows.data_pipeline import data_cleanup_flow, data_pipeline_flow
+from config_loader import load_schedules
+from flows.data_pipeline import data_cleanup_flow, data_pipeline_flow
 from shared.logging import configure_logging, get_logger
 
 logger = get_logger("prefect_scheduler")

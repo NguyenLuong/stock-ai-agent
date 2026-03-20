@@ -156,7 +156,7 @@ class VnstockClient:
                 error=str(exc),
                 component="vnstock_client",
             )
-            from services.crawler.market_data.mock_data import (
+            from market_data.mock_data import (
                 generate_mock_stock_price,
             )
 
@@ -189,7 +189,7 @@ class VnstockClient:
                 error=str(exc),
                 component="vnstock_client",
             )
-            from services.crawler.market_data.mock_data import (
+            from market_data.mock_data import (
                 generate_mock_financial_ratios,
             )
 

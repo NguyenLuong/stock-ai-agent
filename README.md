@@ -51,3 +51,8 @@ Restart cleanly:
 ```bash
 docker-compose down && docker-compose up -d
 ```
+
+Initial database table
+```bash
+docker-compose run --rm -w /shared-pkg/shared/db app alembic upgrade head
+```

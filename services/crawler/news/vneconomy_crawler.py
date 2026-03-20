@@ -5,8 +5,8 @@ from __future__ import annotations
 import httpx
 from bs4 import BeautifulSoup
 
-from services.crawler.middleware.robots_checker import RobotsChecker
-from services.crawler.news.base_crawler import BaseNewsCrawler
+from middleware.robots_checker import RobotsChecker
+from news.base_crawler import BaseNewsCrawler
 
 
 class VnEconomyCrawler(BaseNewsCrawler):
