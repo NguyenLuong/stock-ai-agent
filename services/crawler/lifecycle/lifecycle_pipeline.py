@@ -13,7 +13,7 @@ from shared.llm.prompt_loader import load_prompt
 from shared.logging import get_logger
 from shared.utils.datetime_utils import now_utc
 
-from services.crawler.lifecycle.models import LifecyclePipelineResult
+from lifecycle.models import LifecyclePipelineResult
 
 logger = get_logger("data_lifecycle")
 

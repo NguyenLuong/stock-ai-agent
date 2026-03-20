@@ -11,7 +11,7 @@ from prefect import flow
 
 from shared.logging import get_logger
 from shared.utils.datetime_utils import now_utc
-from services.scheduler.tasks.http_trigger import trigger_pipeline
+from tasks.http_trigger import trigger_pipeline
 
 logger = get_logger("prefect_scheduler")
 

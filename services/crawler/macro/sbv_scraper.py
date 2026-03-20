@@ -12,8 +12,8 @@ import re
 import httpx
 from bs4 import BeautifulSoup
 
-from services.crawler.macro.models import MacroDataResult
-from services.crawler.middleware.robots_checker import RobotsChecker
+from macro.models import MacroDataResult
+from middleware.robots_checker import RobotsChecker
 from shared.logging import get_logger
 from shared.utils.datetime_utils import now_utc
 

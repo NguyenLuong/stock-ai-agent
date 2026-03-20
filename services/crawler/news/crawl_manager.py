@@ -8,12 +8,12 @@ import httpx
 from shared.llm.config_loader import get_sources
 from shared.logging import get_logger
 
-from services.crawler.middleware.rate_limiter import RateLimitedTransport
-from services.crawler.middleware.robots_checker import RobotsChecker
-from services.crawler.news.article_repo import save_articles
-from services.crawler.news.cafef_crawler import CafeFCrawler
-from services.crawler.news.vietstock_crawler import VietstockCrawler
-from services.crawler.news.vneconomy_crawler import VnEconomyCrawler
+from middleware.rate_limiter import RateLimitedTransport
+from middleware.robots_checker import RobotsChecker
+from news.article_repo import save_articles
+from news.cafef_crawler import CafeFCrawler
+from news.vietstock_crawler import VietstockCrawler
+from news.vneconomy_crawler import VnEconomyCrawler
 
 logger = get_logger("crawler.crawl_manager")
 

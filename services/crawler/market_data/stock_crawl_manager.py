@@ -11,12 +11,12 @@ import time
 from dataclasses import dataclass, field
 from datetime import date
 
-from services.crawler.market_data.stock_data_repo import (
+from market_data.stock_data_repo import (
     count_stock_prices_batch,
     save_stock_prices,
 )
-from services.crawler.market_data.ticker_config import load_ticker_config
-from services.crawler.market_data.vnstock_client import VnstockClient
+from market_data.ticker_config import load_ticker_config
+from market_data.vnstock_client import VnstockClient
 from shared.logging import get_logger
 from shared.utils.datetime_utils import now_utc
 
