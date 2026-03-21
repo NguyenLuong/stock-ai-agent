@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.crawler.embedding.embedding_pipeline import (
+from embedding.embedding_pipeline import (
     _prepare_text,
     run_embedding_pipeline,
 )
-from services.crawler.embedding.models import EmbeddingPipelineResult
+from embedding.models import EmbeddingPipelineResult
 
 
 def _make_orm_article(
@@ -68,8 +68,8 @@ class TestRunEmbeddingPipeline:
         session.commit = AsyncMock()
         return session
 
-    @patch("services.crawler.embedding.embedding_pipeline.get_async_session")
-    @patch("services.crawler.embedding.embedding_pipeline.embed_texts")
+    @patch("embedding.embedding_pipeline.get_async_session")
+    @patch("embedding.embedding_pipeline.embed_texts")
     async def test_embeds_unprocessed_articles(
         self, mock_embed, mock_get_session, mock_session
     ):
@@ -100,7 +100,7 @@ class TestRunEmbeddingPipeline:
             assert article.embedded is True
             assert article.embedding is not None
 
-    @patch("services.crawler.embedding.embedding_pipeline.get_async_session")
+    @patch("embedding.embedding_pipeline.get_async_session")
     async def test_handles_empty_batch(self, mock_get_session, mock_session):
         result_mock = MagicMock()
         result_mock.scalars.return_value.all.return_value = []
@@ -114,8 +114,8 @@ class TestRunEmbeddingPipeline:
         assert result.embedded_count == 0
         assert result.skipped_count == 0
 
-    @patch("services.crawler.embedding.embedding_pipeline.get_async_session")
-    @patch("services.crawler.embedding.embedding_pipeline.embed_texts")
+    @patch("embedding.embedding_pipeline.get_async_session")
+    @patch("embedding.embedding_pipeline.embed_texts")
     async def test_skips_articles_without_content(
         self, mock_embed, mock_get_session, mock_session
     ):
@@ -139,8 +139,8 @@ class TestRunEmbeddingPipeline:
         # Only one text should be embedded
         mock_embed.assert_awaited_once_with(["Has Content\n\nContent"], batch_size=100)
 
-    @patch("services.crawler.embedding.embedding_pipeline.get_async_session")
-    @patch("services.crawler.embedding.embedding_pipeline.embed_texts")
+    @patch("embedding.embedding_pipeline.get_async_session")
+    @patch("embedding.embedding_pipeline.embed_texts")
     async def test_handles_embedding_error(
         self, mock_embed, mock_get_session, mock_session
     ):
@@ -161,8 +161,8 @@ class TestRunEmbeddingPipeline:
         mock_session.commit.assert_not_awaited()
         mock_session.rollback.assert_awaited_once()
 
-    @patch("services.crawler.embedding.embedding_pipeline.get_async_session")
-    @patch("services.crawler.embedding.embedding_pipeline.embed_texts")
+    @patch("embedding.embedding_pipeline.get_async_session")
+    @patch("embedding.embedding_pipeline.embed_texts")
     async def test_uses_summary_fallback(
         self, mock_embed, mock_get_session, mock_session
     ):
@@ -184,8 +184,8 @@ class TestRunEmbeddingPipeline:
             ["Title\n\nSummary text"], batch_size=100
         )
 
-    @patch("services.crawler.embedding.embedding_pipeline.get_async_session")
-    @patch("services.crawler.embedding.embedding_pipeline.embed_texts")
+    @patch("embedding.embedding_pipeline.get_async_session")
+    @patch("embedding.embedding_pipeline.embed_texts")
     async def test_pipeline_result_has_duration(
         self, mock_embed, mock_get_session, mock_session
     ):

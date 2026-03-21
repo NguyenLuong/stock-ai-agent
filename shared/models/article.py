@@ -2,6 +2,8 @@
 import uuid
 from datetime import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -15,6 +17,7 @@ class ArticleBase(BaseModel):
     summary: str | None = None
     embedding: list[float] | None = None
     embedded: bool = False
+    category: Literal["stock", "macro"] = "stock"
 
 
 class ArticleCreate(ArticleBase):

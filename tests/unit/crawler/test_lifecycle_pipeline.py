@@ -10,12 +10,12 @@ import pytest
 
 from shared.llm.client import LLMCallError
 
-from services.crawler.lifecycle.lifecycle_pipeline import (
+from lifecycle.lifecycle_pipeline import (
     _build_summary_prompt,
     _estimate_tokens,
     run_lifecycle_pipeline,
 )
-from services.crawler.lifecycle.models import LifecyclePipelineResult
+from lifecycle.models import LifecyclePipelineResult
 
 
 def _make_orm_article(
@@ -51,7 +51,7 @@ def _setup_mock_session(mock_get_session, mock_session, articles):
 
 class TestBuildSummaryPrompt:
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
     def test_calls_prompt_loader_with_correct_args(self, mock_load):
         mock_load.return_value = MagicMock(text="rendered prompt")
         article = _make_orm_article(title="VN-Index tăng mạnh", raw_content="Chi tiết...")
@@ -75,9 +75,9 @@ class TestRunLifecyclePipeline:
         session.rollback = AsyncMock()
         return session
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_summarizes_old_articles_successfully(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -103,9 +103,9 @@ class TestRunLifecyclePipeline:
             assert article.summary == "Tóm tắt bài viết"
             assert article.raw_content is None
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_skips_articles_already_summarized(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -122,7 +122,7 @@ class TestRunLifecyclePipeline:
         assert result.failed_count == 0
         mock_llm.assert_not_awaited()
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
     async def test_handles_empty_batch(self, mock_get_session, mock_session):
         _setup_mock_session(mock_get_session, mock_session, [])
 
@@ -134,9 +134,9 @@ class TestRunLifecyclePipeline:
         assert result.failed_count == 0
         assert result.duration_seconds >= 0
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_sets_raw_content_to_none_after_summarization(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -150,9 +150,9 @@ class TestRunLifecyclePipeline:
         assert article.raw_content is None
         assert article.summary == "Summary text"
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_retains_embedding_vector(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -172,9 +172,9 @@ class TestRunLifecyclePipeline:
         assert article.embedding == original_embedding
         assert article.embedded is True
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_handles_llm_failure_gracefully(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -200,9 +200,9 @@ class TestRunLifecyclePipeline:
         # Second article should retain raw_content
         assert articles[1].raw_content == "Content 2"
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_logs_pipeline_summary(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -221,9 +221,9 @@ class TestRunLifecyclePipeline:
         assert result.skipped_count == 1
         assert result.duration_seconds >= 0
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_processes_in_batches(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -244,9 +244,9 @@ class TestRunLifecyclePipeline:
         # 2 commits: one for batch [0,1], one for batch [2]
         assert mock_session.commit.await_count == 2
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_uses_correct_llm_params(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -265,9 +265,9 @@ class TestRunLifecyclePipeline:
             component="data_lifecycle",
         )
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_strips_whitespace_from_summary(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -280,9 +280,9 @@ class TestRunLifecyclePipeline:
 
         assert article.summary == "Summary with spaces"
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_tokens_used_is_estimated(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -298,9 +298,9 @@ class TestRunLifecyclePipeline:
         expected = _estimate_tokens("rendered prompt for article", "Tóm tắt nội dung")
         assert result.tokens_used == expected
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_handles_llm_call_error(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
@@ -316,9 +316,9 @@ class TestRunLifecyclePipeline:
         assert result.summarized_count == 0
         assert article.raw_content == "Content"
 
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.load_prompt")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.get_async_session")
-    @patch("services.crawler.lifecycle.lifecycle_pipeline.call_llm")
+    @patch("lifecycle.lifecycle_pipeline.load_prompt")
+    @patch("lifecycle.lifecycle_pipeline.get_async_session")
+    @patch("lifecycle.lifecycle_pipeline.call_llm")
     async def test_batch_commit_failure_triggers_rollback(
         self, mock_llm, mock_get_session, mock_load_prompt, mock_session
     ):
