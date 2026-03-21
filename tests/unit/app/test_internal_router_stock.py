@@ -49,7 +49,7 @@ class TestTriggerStockCrawl:
         assert response.status_code == 403
 
     @patch(
-        "services.crawler.market_data.stock_crawl_manager.run_stock_crawl",
+        "market_data.stock_crawl_manager.run_stock_crawl",
         new_callable=AsyncMock,
     )
     def test_stock_crawl_success(self, mock_crawl) -> None:
@@ -69,7 +69,7 @@ class TestTriggerStockCrawl:
         assert data["duration_seconds"] >= 0
 
     @patch(
-        "services.crawler.market_data.stock_crawl_manager.run_stock_crawl",
+        "market_data.stock_crawl_manager.run_stock_crawl",
         new_callable=AsyncMock,
     )
     def test_stock_crawl_non_trading_day(self, mock_crawl) -> None:
@@ -93,7 +93,7 @@ class TestTriggerStockCrawl:
         assert data["result"]["skipped_reason"] == "non_trading_day"
 
     @patch(
-        "services.crawler.market_data.stock_crawl_manager.run_stock_crawl",
+        "market_data.stock_crawl_manager.run_stock_crawl",
         new_callable=AsyncMock,
     )
     def test_stock_crawl_failure(self, mock_crawl) -> None:

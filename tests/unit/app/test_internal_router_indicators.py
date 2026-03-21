@@ -47,7 +47,7 @@ class TestTriggerTechnicalIndicators:
         assert response.status_code == 403
 
     @patch(
-        "services.crawler.market_data.indicator_manager.run_indicator_calculation",
+        "market_data.indicator_manager.run_indicator_calculation",
         new_callable=AsyncMock,
     )
     def test_success(self, mock_calc) -> None:
@@ -69,7 +69,7 @@ class TestTriggerTechnicalIndicators:
         assert data["duration_seconds"] >= 0
 
     @patch(
-        "services.crawler.market_data.indicator_manager.run_indicator_calculation",
+        "market_data.indicator_manager.run_indicator_calculation",
         new_callable=AsyncMock,
     )
     def test_non_trading_day(self, mock_calc) -> None:
@@ -94,7 +94,7 @@ class TestTriggerTechnicalIndicators:
         assert data["result"]["skipped_reason"] == "non_trading_day"
 
     @patch(
-        "services.crawler.market_data.indicator_manager.run_indicator_calculation",
+        "market_data.indicator_manager.run_indicator_calculation",
         new_callable=AsyncMock,
     )
     def test_failure(self, mock_calc) -> None:

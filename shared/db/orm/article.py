@@ -29,6 +29,9 @@ class Article(Base):
     embedded: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("FALSE"), default=False
     )
+    category: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'stock'")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -41,6 +44,7 @@ class Article(Base):
             "embedded",
             postgresql_where="embedded = FALSE",
         ),
+        Index("idx_articles_category", "category"),
         # HNSW index for pgvector semantic search — tracked here so autogenerate detects drift
         Index(
             "idx_articles_embedding_hnsw",

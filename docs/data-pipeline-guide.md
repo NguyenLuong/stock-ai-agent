@@ -8,13 +8,10 @@
 [Prefect Scheduler] ── cron triggers ──> [FastAPI Internal Endpoints]
     │
     ├── /internal/trigger/crawl
-    │       ├── News Crawlers (Vietstock, CafeF, VnEconomy)
-    │       │       ↓ RSS feeds → parse HTML → extract tickers
-    │       │   [articles table] ── dedup by URL
-    │       │
-    │       └── Macro Crawlers (VN-Index, USD/VND, Foreign Flow, SBV Rate)
-    │               ↓ vnstock API + sbv.gov.vn scraping
-    │           [market_data table] ── data_type = "macro"
+    │       └── News Crawlers (Vietstock, CafeF, VnEconomy)
+    │               ↓ RSS feeds → parse HTML → extract tickers
+    │               ↓ Category tagging: "stock" hoặc "macro" từ feed config
+    │           [articles table] ── dedup by URL, category column
     │
     ├── /internal/trigger/stock-crawl
     │       └── vnstock Client → OHLCV cho ~44 tickers
@@ -38,13 +35,9 @@
 
 | Crawler | Source | Schedule (UTC) | Rate Limit | Output Table | Ghi Chú |
 |---------|--------|----------------|------------|--------------|---------|
-| Vietstock | 2 RSS feeds | `0 6,12,18 * * *` | 1 RPS | articles | Dedup by URL |
-| CafeF | 2 RSS feeds | `0 6,12,18 * * *` | 1 RPS | articles | Dedup by URL |
-| VnEconomy | 1 RSS feed | `0 7,13,19 * * *` | 1 RPS | articles | Dedup by URL |
-| VN-Index | vnstock API (VCI) | `30 9,14 * * 1-5` | Retry 3 lần | market_data | close + volume |
-| USD/VND | vnstock API (MSN) | `0 9 * * 1-5` | Retry 3 lần | market_data | Tỷ giá |
-| Foreign Flow | vnstock (mock) | `0 16 * * 1-5` | — | market_data | Luôn trả mock data |
-| SBV Rate | sbv.gov.vn scraping | `0 8 * * 1` | 1 RPS | market_data | Hàng tuần thứ Hai |
+| Vietstock | 5 RSS feeds | `0 6,12,18 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
+| CafeF | 5 RSS feeds | `0 6,12,18 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
+| VnEconomy | 4 RSS feeds | `0 7,13,19 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
 | Stock Prices | vnstock API (VCI) | `0 10 * * 1-5` | 1s giữa tickers | market_data | ~44 tickers |
 | Tech Indicators | pandas-ta calc | `30 10 * * 1-5` | 0.1s giữa tickers | market_data | 10 indicators |
 | Embedding | OpenAI API | Sau crawl | Batch 100 | articles.embedding | 1536-dim vector |
@@ -52,8 +45,8 @@
 
 ### Database Schema Tổng Quan
 
-- **articles** — Lưu bài viết tin tức tài chính (Vietstock, CafeF, VnEconomy)
-- **market_data** — Lưu giá cổ phiếu, chỉ số macro, technical indicators
+- **articles** — Lưu bài viết tin tức tài chính (Vietstock, CafeF, VnEconomy), column `category` phân biệt "stock" và "macro"
+- **market_data** — Lưu giá cổ phiếu, technical indicators
 
 ---
 
@@ -63,14 +56,17 @@
 
 **Source:** `services/crawler/news/vietstock_crawler.py`
 
-**RSS Feeds:**
-- `https://vietstock.vn/rss/tai-chinh.rss`
-- `https://vietstock.vn/rss/chung-khoan.rss`
+**RSS Feeds (5 feeds, category tagging):**
+- `vi-mo.rss` — category: **macro**
+- `kinh-te-dau-tu.rss` — category: **macro**
+- `co-phieu.rss` — category: **stock**
+- `tai-chinh-quoc-te.rss` — category: **macro**
+- `ngan-hang.rss` — category: **macro**
 
 **Schedule:** `0 6,12,18 * * *` — 3 lần/ngày lúc 6:00, 12:00, 18:00 UTC (13:00, 19:00, 01:00 VN)
 
 **Cách hoạt động:**
-1. Fetch RSS XML từ 2 feeds
+1. Fetch RSS XML từ 5 feeds (mỗi feed có category config)
 2. Parse mỗi `<item>`: lấy title, link, pubDate, description
 3. Kiểm tra robots.txt trước khi fetch full article
 4. Fetch HTML article page qua HTTP client (timeout 30s)
@@ -78,37 +74,44 @@
    - `div.content-detail` → `div.article-content` → `div#content-detail` → `<article>` → fallback (div có nhiều `<p>` nhất)
 6. Extract ticker symbols từ text (pattern: 3 chữ cái viết hoa `[A-Z]{3}`, loại trừ false positives như USD, VND, GDP, CPI...)
 7. Dedup bằng URL — bài đã tồn tại sẽ bị skip
+8. Gán `category` từ feed config ("macro" hoặc "stock") vào `ArticleCreate`
 
-**Output:** Bảng `articles` — columns: source="vietstock", ticker_symbol, title, url (unique), published_at, raw_content
+**Output:** Bảng `articles` — columns: source="vietstock", ticker_symbol, title, url (unique), published_at, raw_content, category
 
 ### 2.2 CafeF
 
 **Source:** `services/crawler/news/cafef_crawler.py`
 
-**RSS Feeds:**
-- `https://cafef.vn/rss/trang-chu.rss`
-- `https://cafef.vn/rss/thi-truong-chung-khoan.rss`
+**RSS Feeds (5 feeds, category tagging):**
+- `tai-chinh-quoc-te.rss` — category: **macro**
+- `thi-truong-chung-khoan.rss` — category: **stock**
+- `tai-chinh-ngan-hang.rss` — category: **macro**
+- `vi-mo-dau-tu.rss` — category: **macro**
+- `thi-truong.rss` — category: **stock**
 
 **Schedule:** `0 6,12,18 * * *` — cùng lịch với Vietstock
 
 **Cách hoạt động:** Tương tự Vietstock, chỉ khác CSS selectors:
 - `div.detail-content` → `div#mainContent` → `div.contentdetail` → `<article>` → fallback
 
-**Output:** Bảng `articles` — source="cafef"
+**Output:** Bảng `articles` — source="cafef", category từ feed config
 
 ### 2.3 VnEconomy
 
 **Source:** `services/crawler/news/vneconomy_crawler.py`
 
-**RSS Feed:**
-- `https://vneconomy.vn/rss/chung-khoan.rss`
+**RSS Feeds (4 feeds, category tagging):**
+- `chung-khoan.rss` — category: **stock**
+- `thi-truong.rss` — category: **stock**
+- `tai-chinh.rss` — category: **macro**
+- `kinh-te-the-gioi.rss` — category: **macro**
 
 **Schedule:** `0 7,13,19 * * *` — 3 lần/ngày lúc 7:00, 13:00, 19:00 UTC
 
 **CSS selectors:**
 - `div.detail__content` → `div.article-body` → `div.content-detail` → `<article>` → fallback
 
-**Output:** Bảng `articles` — source="vneconomy"
+**Output:** Bảng `articles` — source="vneconomy", category từ feed config
 
 ### 2.4 Crawl Manager & Rate Limiting
 
@@ -145,78 +148,35 @@
 
 ---
 
-## 3. Macro Data Crawler
+## 3. Macro News (Category-Based Approach)
 
-**Source:** `services/crawler/macro/macro_crawl_manager.py`
+Thay vì crawl số liệu vĩ mô từ APIs riêng (VN-Index, USD/VND, SBV...), hệ thống phân tích vĩ mô dựa trên **tin tức vĩ mô** được crawl qua news pipeline có sẵn.
 
-Macro crawler thu thập 4 loại chỉ số kinh tế vĩ mô, chạy **tuần tự** với cơ chế **graceful degradation** — nếu 1 source fail, các source khác vẫn tiếp tục.
+### Cách Hoạt Động
 
-### 3.1 VN-Index
+1. RSS feeds trong `config/crawlers/sources.yaml` được gán `category: "macro"` hoặc `"stock"`
+2. News crawlers (Vietstock, CafeF, VnEconomy) đọc category từ feed config
+3. Khi tạo `ArticleCreate`, category được gán tự động từ feed config
+4. Articles lưu vào bảng `articles` với column `category` (default: "stock")
+5. Market Context Agent query `WHERE category = 'macro'` để lấy tin vĩ mô
+6. Prompt `macro_analysis.yaml` v2.0 nhận danh sách bài báo thay vì số liệu
 
-**Source:** `services/crawler/macro/vnstock_macro_client.py`
+### Category Mapping
 
-**Schedule:** `30 9,14 * * 1-5` — 2 lần/ngày trading days lúc 9:30, 14:00 UTC
+| Source | Feed Keywords | Category |
+|--------|--------------|----------|
+| Vietstock | vi-mo, kinh-te-dau-tu, tai-chinh-quoc-te, ngan-hang | macro |
+| Vietstock | co-phieu | stock |
+| CafeF | tai-chinh-quoc-te, tai-chinh-ngan-hang, vi-mo-dau-tu | macro |
+| CafeF | thi-truong-chung-khoan, thi-truong | stock |
+| VnEconomy | tai-chinh, kinh-te-the-gioi | macro |
+| VnEconomy | chung-khoan, thi-truong | stock |
 
-**Cách hoạt động:**
-- Gọi vnstock API, quote source = `VCI`, history length = `1M`, interval = `1D`
-- Trả về 2 giá trị: **close price** và **volume** của VN-Index
-- Lưu vào `market_data` với `data_type="macro"`, `indicator_name="vn_index_close"` / `"vn_index_volume"`
+### Backward Compatibility
 
-**Fallback:** Mock data — vn_index_close: 1250.0, vn_index_volume: 500,000,000
-
-**Retry:** Exponential backoff (min 1s, max 10s), tối đa 3 lần, retry trên ConnectionError/TimeoutError/OSError
-
-### 3.2 Tỷ Giá USD/VND
-
-**Source:** `services/crawler/macro/vnstock_macro_client.py`
-
-**Schedule:** `0 9 * * 1-5` — hàng ngày trading days lúc 9:00 UTC
-
-**Cách hoạt động:**
-- Gọi vnstock FX API, source = `MSN`, symbol = `USDVND`, history = `1M`, interval = `1D`
-- Lưu indicator_name = `"usd_vnd_rate"`
-
-**Fallback:** Mock data — usd_vnd_rate: 25,850.0
-
-### 3.3 Dòng Vốn Ngoại
-
-**Source:** `services/crawler/macro/vnstock_macro_client.py`
-
-**Schedule:** `0 16 * * 1-5` — hàng ngày trading days lúc 16:00 UTC
-
-**Lưu ý:** vnstock chưa hỗ trợ foreign flow aggregation → **luôn trả mock data** (data_source="mock")
-- indicator_name = `"foreign_net_flow"`, giá trị = 0.0
-
-### 3.4 Lãi Suất SBV
-
-**Source:** `services/crawler/macro/sbv_scraper.py`
-
-**Schedule:** `0 8 * * 1` — hàng tuần thứ Hai lúc 8:00 UTC
-
-**Cách hoạt động:**
-1. Kiểm tra robots.txt trên `https://www.sbv.gov.vn`
-2. Fetch trang chủ SBV
-3. Tìm lãi suất tái cấp vốn bằng 2 strategy:
-   - **Strategy 1:** Tìm trong HTML tables chứa keywords ("lãi suất tái cấp vốn", "refinancing rate"...)
-   - **Strategy 2:** Tìm trong full text, extract số % trong window 150 ký tự quanh keyword
-4. Validate: 0 < giá trị ≤ 50
-5. Lưu indicator_name = `"sbv_interest_rate"`
-
-**Rate limit:** 1 RPS, base URL: `https://www.sbv.gov.vn`
-
-### 3.5 Macro Crawl Sequence & Graceful Degradation
-
-**Thứ tự thực thi tuần tự:**
-1. VN-Index (close + volume)
-2. USD/VND exchange rate
-3. Foreign net flow
-4. SBV interest rate
-
-**Graceful degradation:**
-- Mỗi source chạy trong try/except riêng
-- Source fail → log warning → tiếp tục source tiếp theo
-- Kết quả thành công được save ngay
-- Nếu tất cả sources fail → log cảnh báo AC3
+- Column `category` có `server_default="stock"` → articles cũ tự động gán "stock"
+- Crawlers hỗ trợ backward-compatible: nếu feed config là string (không phải dict), default category = "stock"
+- Lifecycle cleanup sẽ xóa raw_content sau 30 ngày → sau vài tuần toàn bộ articles mới sẽ có category chính xác
 
 ---
 
@@ -420,7 +380,7 @@ Flow `data-cleanup` chạy riêng lúc 2:00 AM — chỉ trigger lifecycle endpo
 
 | Endpoint | Method | Mô Tả |
 |----------|--------|--------|
-| `/internal/trigger/crawl` | POST | News crawl + Macro crawl |
+| `/internal/trigger/crawl` | POST | News crawl (including macro news) |
 | `/internal/trigger/stock-crawl` | POST | Stock history crawl |
 | `/internal/trigger/technical-indicators` | POST | Technical indicator calculation |
 | `/internal/trigger/embedding` | POST | Article embedding |
@@ -431,7 +391,7 @@ Flow `data-cleanup` chạy riêng lúc 2:00 AM — chỉ trigger lifecycle endpo
 ### 8.4 Monitoring
 
 - **Prefect UI:** Dashboard theo dõi flow runs, task states, logs
-- **Logs:** Structured JSON logging với component prefix (VD: `crawler.vietstock`, `macro.vnindex`)
+- **Logs:** Structured JSON logging với component prefix (VD: `crawler.vietstock`, `crawler.cafef`)
 - **Retry:** Mỗi pipeline step có error handling riêng, không retry ở scheduler level
 - **Kết quả:** Mỗi endpoint trả JSON response với status, duration_seconds, và chi tiết kết quả
 
@@ -461,28 +421,23 @@ GROUP BY source, embedded ORDER BY source;
 - `published_at` age không nên > 24 giờ cho ngày bình thường
 - `embedded=TRUE` ratio nên cao (>90% cho bài >1 giờ tuổi)
 
-### 9.2 Macro Indicators
+### 9.2 Macro News (Category-Based)
 
 ```sql
--- Chỉ số macro mới nhất
-SELECT ticker_symbol, indicator_name, indicator_value, data_as_of, data_source
-FROM market_data
-WHERE data_type = 'macro'
-ORDER BY data_as_of DESC LIMIT 10;
+-- Đếm tin vĩ mô theo source (24 giờ gần nhất)
+SELECT source, COUNT(*) FROM articles
+WHERE category = 'macro' AND published_at > NOW() - INTERVAL '24 hours'
+GROUP BY source;
 
--- Kiểm tra từng loại macro
-SELECT indicator_name, COUNT(*), MAX(data_as_of) as latest,
-       NOW() - MAX(data_as_of) as age
-FROM market_data
-WHERE data_type = 'macro'
-GROUP BY indicator_name;
+-- Kiểm tra tỷ lệ phân loại
+SELECT category, COUNT(*) FROM articles
+WHERE published_at > NOW() - INTERVAL '7 days'
+GROUP BY category;
 ```
 
 **Expected patterns:**
-- `vn_index_close`, `vn_index_volume`: cập nhật 2 lần/ngày trading days
-- `usd_vnd_rate`: cập nhật hàng ngày trading days
-- `foreign_net_flow`: data_source="mock" (chưa có real data)
-- `sbv_interest_rate`: cập nhật hàng tuần thứ Hai
+- Mỗi source nên có tin macro mới mỗi 6-7 giờ
+- Tỷ lệ macro/stock phụ thuộc vào feed config (~50/50)
 
 ### 9.3 Stock Prices
 
@@ -596,7 +551,6 @@ ORDER BY created_at DESC LIMIT 10;
 | Vấn Đề | Kiểm Tra | Cách Xử Lý |
 |---------|----------|-------------|
 | Không có bài mới | `SELECT MAX(published_at) FROM articles WHERE source='...'` | Kiểm tra RSS feeds, crawl logs |
-| Stale macro data | `SELECT MAX(data_as_of) FROM market_data WHERE data_type='macro'` | Kiểm tra vnstock API, SBV site |
 | Skipped trading day | Log: `Non-trading day, skipping incremental` | Bình thường — chỉ crawl vào ngày giao dịch |
 | Ticker bị skip | Log: `Invalid ticker format` | Kiểm tra `stock_tickers.yaml`, pattern `^[A-Z]{3,4}$` |
 | Mock data thay vì real | `data_source='mock'` trong market_data | vnstock API fail — kiểm tra connectivity, API status |

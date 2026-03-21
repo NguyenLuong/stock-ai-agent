@@ -64,6 +64,7 @@ async def run_news_crawl() -> CrawlResult:
             transport=transport,
             headers={"User-Agent": _USER_AGENT},
             timeout=30.0,
+            follow_redirects=True,
         ) as client:
             robots_checker = RobotsChecker(client=client, user_agent=_USER_AGENT)
             crawler_cls = _get_crawler_map()[source_name]

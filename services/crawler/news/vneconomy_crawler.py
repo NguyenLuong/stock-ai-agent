@@ -16,12 +16,12 @@ class VnEconomyCrawler(BaseNewsCrawler):
         self,
         client: httpx.AsyncClient,
         robots_checker: RobotsChecker,
-        rss_feeds: list[str],
+        rss_feeds: list[dict | str],
     ) -> None:
         super().__init__(client=client, robots_checker=robots_checker, source_name="vneconomy")
         self._rss_feeds = rss_feeds
 
-    async def get_rss_feeds(self) -> list[str]:
+    async def get_rss_feeds(self) -> list[dict]:
         return self._rss_feeds
 
     def parse_article_page(self, url: str, html: str) -> str:

@@ -173,7 +173,7 @@ async def run_stock_crawl() -> StockCrawlResult:
                 component="stock_crawler",
             )
         if i < len(initial_tickers) - 1 or incremental_tickers:
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(4.0)
 
     # Process incremental tickers
     for i, ticker in enumerate(incremental_tickers):
@@ -201,7 +201,7 @@ async def run_stock_crawl() -> StockCrawlResult:
                 component="stock_crawler",
             )
         if i < len(incremental_tickers) - 1:
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(5.0)
 
     duration = round(time.monotonic() - start, 2)
 

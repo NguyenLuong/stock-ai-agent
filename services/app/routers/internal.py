@@ -28,16 +28,14 @@ def _validate_trigger_source(x_trigger_source: str) -> None:
 async def trigger_crawl(
     x_trigger_source: str = Header(default=""),
 ) -> dict:
-    """Trigger full crawl cycle: news + macro data."""
+    """Trigger news crawl cycle (including macro news via category tagging)."""
     _validate_trigger_source(x_trigger_source)
 
     from news.crawl_manager import run_news_crawl
-    from macro.macro_crawl_manager import run_macro_crawl
 
     start = time.monotonic()
     errors: list[str] = []
     news_result_dict: dict = {}
-    macro_result_dict: dict = {}
 
     try:
         news_result = await run_news_crawl()
@@ -46,22 +44,6 @@ async def trigger_crawl(
         errors.append(f"news_crawl: {exc}")
         logger.error(
             "news_crawl_failed",
-            component="internal_trigger",
-            error=str(exc),
-        )
-
-    try:
-        macro_result = await run_macro_crawl()
-        macro_result_dict = {
-            "saved_count": macro_result.saved_count,
-            "succeeded": len(macro_result.succeeded),
-            "failed": len(macro_result.failed),
-            "failed_indicators": macro_result.failed_indicators,
-        }
-    except Exception as exc:
-        errors.append(f"macro_crawl: {exc}")
-        logger.error(
-            "macro_crawl_failed",
             component="internal_trigger",
             error=str(exc),
         )
@@ -79,7 +61,6 @@ async def trigger_crawl(
         "status": "ok" if not errors else "partial",
         "duration_seconds": duration,
         "news_crawl": news_result_dict,
-        "macro_crawl": macro_result_dict,
         "errors": errors,
     }
 

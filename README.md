@@ -23,16 +23,15 @@ AI-powered Vietnamese stock market analysis system delivering daily morning brie
 | Service     | Description                          |
 |-------------|--------------------------------------|
 | `postgres`  | PostgreSQL with pgvector extension   |
-| `crawler`   | News & market data ingestion         |
 | `scheduler` | Prefect-based task scheduling        |
-| `app`       | FastAPI + LangGraph AI agent         |
+| `app`       | FastAPI + LangGraph AI agent + Crawler modules (news & market data ingestion) |
 
 ## Project Structure
 
 ```
 stock-ai-agent/
 ├── config/          # YAML configuration (models, prompts, schedules)
-├── services/        # Microservices (app, crawler, scheduler)
+├── services/        # Services (app, scheduler) + crawler modules
 ├── shared/          # Shared Python package
 ├── tests/           # Unit and integration tests
 ├── docker-compose.yml

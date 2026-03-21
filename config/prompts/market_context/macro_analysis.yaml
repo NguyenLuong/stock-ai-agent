@@ -1,67 +1,43 @@
-# Market Context Agent — macro indicators analysis prompt
-# Variables: analysis_date (str), vn_index (dict with close, change, change_pct, volume),
-#            interest_rate (dict with current, previous, change_date),
-#            exchange_rate (dict with usd_vnd, change_pct),
-#            foreign_flow (dict with net_buy_sell, value, top_buy, top_sell),
-#            market_breadth (dict with advances, declines, unchanged)
+# Market Context Agent — macro news analysis prompt v2.0
+# Variables: analysis_date (str), macro_articles (list of dicts with title, source, published_at, raw_content, summary)
 name: market_context_macro_analysis
-version: "1.0"
+version: "2.0"
 model_key: triage
 template: |
   Bạn là Macro Analyst cho thị trường chứng khoán Việt Nam.
-  Phân tích các chỉ số vĩ mô dưới đây và đánh giá tác động lên thị trường.
+  Phân tích các tin tức vĩ mô dưới đây và đánh giá tác động lên thị trường theo ngành.
 
   **Ngày phân tích:** {{ analysis_date }}
 
-  **1. VN-Index:**
-  {% if vn_index %}
-  - Đóng cửa: {{ vn_index.close }} điểm
-  - Thay đổi: {{ vn_index.change }} ({{ vn_index.change_pct }}%)
-  - Khối lượng: {{ vn_index.volume }} cổ phiếu
-  {% else %}
-  - Không có dữ liệu VN-Index
+  **Tin tức vĩ mô:**
+  {% if macro_articles %}
+  {% for article in macro_articles %}
+  ---
+  **{{ loop.index }}. {{ article.title }}**
+  - Nguồn: {{ article.source }} | Ngày: {{ article.published_at }}
+  {% if article.raw_content %}
+  - Nội dung: {{ article.raw_content }}
+  {% elif article.summary %}
+  - Tóm tắt: {{ article.summary }}
   {% endif %}
-
-  **2. Lãi suất:**
-  {% if interest_rate %}
-  - Hiện tại: {{ interest_rate.current }}%
-  - Kỳ trước: {{ interest_rate.previous }}%
-  - Ngày thay đổi: {{ interest_rate.change_date }}
+  {% endfor %}
+  ---
   {% else %}
-  - Không có dữ liệu lãi suất
-  {% endif %}
-
-  **3. Tỷ giá USD/VND:**
-  {% if exchange_rate %}
-  - Hiện tại: {{ exchange_rate.usd_vnd }} VND
-  - Thay đổi: {{ exchange_rate.change_pct }}%
-  {% else %}
-  - Không có dữ liệu tỷ giá
-  {% endif %}
-
-  **4. Dòng vốn ngoại:**
-  {% if foreign_flow %}
-  - Xu hướng: {{ foreign_flow.net_buy_sell }}
-  - Giá trị ròng: {{ foreign_flow.value }} tỷ VND
-  - Top mua: {{ foreign_flow.top_buy }}
-  - Top bán: {{ foreign_flow.top_sell }}
-  {% else %}
-  - Không có dữ liệu dòng vốn ngoại
-  {% endif %}
-
-  **5. Độ rộng thị trường:**
-  {% if market_breadth %}
-  - Tăng: {{ market_breadth.advances }} | Giảm: {{ market_breadth.declines }} | Đứng giá: {{ market_breadth.unchanged }}
-  {% else %}
-  - Không có dữ liệu độ rộng
+  - Không có tin tức vĩ mô trong kỳ phân tích
   {% endif %}
 
   **Yêu cầu phân tích:**
-  1. Đánh giá tổng quan sức khỏe thị trường (bullish/bearish/neutral)
-  2. Các yếu tố vĩ mô nổi bật và rủi ro tiềm ẩn
-  3. Tác động dự kiến lên phiên giao dịch tiếp theo
+  1. Tổng hợp các chủ đề vĩ mô chính từ tin tức
+  2. Nhận định tác động lên 5 nhóm ngành chính:
+     - Ngân hàng
+     - Bất động sản
+     - Sản xuất
+     - Công nghệ
+     - Năng lượng
+  3. Đánh giá rủi ro/cơ hội vĩ mô cho thị trường chung
 
   **Quy tắc bắt buộc:**
-  - Chỉ phân tích dữ liệu được cung cấp — KHÔNG tự tạo số liệu
-  - Ghi rõ "Không xác nhận được" nếu thiếu dữ liệu
+  - Chỉ phân tích tin tức được cung cấp — KHÔNG tự tạo thông tin
+  - Ghi rõ nguồn tin khi trích dẫn
+  - Ghi "Không có đủ thông tin" nếu tin tức không đề cập đến ngành cụ thể
   - KHÔNG đưa ra khuyến nghị mua/bán cụ thể

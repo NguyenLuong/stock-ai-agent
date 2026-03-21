@@ -42,8 +42,8 @@ class BaseNewsCrawler(ABC):
         self.logger = get_logger(f"crawler.{source_name}")
 
     @abstractmethod
-    async def get_rss_feeds(self) -> list[str]:
-        """Return list of RSS feed URLs for this source."""
+    async def get_rss_feeds(self) -> list[dict]:
+        """Return list of RSS feed dicts with 'url' and 'category' keys."""
 
     @abstractmethod
     def parse_article_page(self, url: str, html: str) -> str:
@@ -54,8 +54,15 @@ class BaseNewsCrawler(ABC):
         articles: list[ArticleCreate] = []
         seen_urls: set[str] = set()
 
-        for feed_url in await self.get_rss_feeds():
-            feed_articles = await self._process_feed(feed_url, seen_urls)
+        for feed_entry in await self.get_rss_feeds():
+            # Backward-compatible: support both str and dict formats
+            if isinstance(feed_entry, str):
+                feed_url = feed_entry
+                category = "stock"
+            else:
+                feed_url = feed_entry["url"]
+                category = feed_entry.get("category", "stock")
+            feed_articles = await self._process_feed(feed_url, seen_urls, category)
             articles.extend(feed_articles)
 
         self.logger.info(
@@ -66,7 +73,7 @@ class BaseNewsCrawler(ABC):
         return articles
 
     async def _process_feed(
-        self, feed_url: str, seen_urls: set[str]
+        self, feed_url: str, seen_urls: set[str], category: str = "stock"
     ) -> list[ArticleCreate]:
         """Fetch and process a single RSS feed."""
         articles: list[ArticleCreate] = []
@@ -100,13 +107,13 @@ class BaseNewsCrawler(ABC):
                 continue
             seen_urls.add(url)
 
-            article = await self._fetch_article(item)
+            article = await self._fetch_article(item, category)
             if article:
                 articles.append(article)
 
         return articles
 
-    async def _fetch_article(self, item: dict) -> ArticleCreate | None:
+    async def _fetch_article(self, item: dict, category: str = "stock") -> ArticleCreate | None:
         """Fetch full article content and create ArticleCreate."""
         url = item["link"]
 
@@ -144,6 +151,7 @@ class BaseNewsCrawler(ABC):
             published_at=published_at,
             raw_content=raw_content or None,
             ticker_symbol=ticker_symbol,
+            category=category,
         )
 
     @staticmethod

@@ -1,7 +1,8 @@
 # Telegram — morning briefing formatter
 # Variables: briefing_date (str), market_summary (str),
 #            watchlist_analyses (list[dict] with ticker, recommendation, confidence, summary),
-#            macro_highlights (str), top_movers (list[dict] with ticker, change_pct, volume_ratio),
+#            macro_highlights (str — nhận định vĩ mô từ phân tích tin tức macro),
+#            top_movers (list[dict] with ticker, change_pct, volume_ratio),
 #            alerts (list[str])
 name: telegram_morning_briefing
 version: "1.0"
@@ -21,8 +22,10 @@ template: |
   - {{ analysis.ticker }}: {{ analysis.recommendation }} ({{ analysis.confidence }}) — {{ analysis.summary }}
   {% endfor %}
 
-  **Điểm nhấn vĩ mô:**
+  {% if macro_highlights %}
+  **Nhận định vĩ mô (từ tin tức):**
   {{ macro_highlights }}
+  {% endif %}
 
   **Top biến động:**
   {% for mover in top_movers %}
@@ -42,7 +45,7 @@ template: |
   1. Header: emoji + tiêu đề + ngày
   2. Tổng quan thị trường (3-5 dòng)
   3. Bảng phân tích danh mục (mỗi mã 1-2 dòng)
-  4. Điểm nhấn vĩ mô (bullet points)
+  4. Nhận định vĩ mô từ tin tức (bullet points)
   5. Cảnh báo (nếu có)
   6. Footer: disclaimer
 
