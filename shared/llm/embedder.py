@@ -21,6 +21,17 @@ logger = get_logger("embedder")
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMENSION = 1536
+# text-embedding-3-small limit: 8192 tokens.
+# Vietnamese text averages ~1.5-2.5 chars/token (mixed Vietnamese + numbers/URLs).
+# Conservative limit: ~8000 tokens * 2 chars/token = 16000 chars.
+MAX_INPUT_CHARS = 16000
+
+
+def _truncate(text: str, max_chars: int = MAX_INPUT_CHARS) -> str:
+    """Truncate text to stay within embedding model token limit."""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars]
 
 
 @retry(
@@ -33,9 +44,10 @@ EMBEDDING_DIMENSION = 1536
 )
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
     client = _get_client()
+    truncated = [_truncate(t) for t in texts]
     response = await client.embeddings.create(
         model=EMBEDDING_MODEL,
-        input=texts,
+        input=truncated,
     )
     return [item.embedding for item in response.data]
 
