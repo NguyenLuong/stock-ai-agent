@@ -6,23 +6,21 @@ import signal
 from prefect import serve
 
 from config_loader import load_schedules
-from flows.data_pipeline import data_cleanup_flow, data_pipeline_flow
+from flows.data_pipeline import data_cleanup_flow, news_crawl_flow, stock_pipeline_flow
 from shared.logging import configure_logging, get_logger
 
 logger = get_logger("prefect_scheduler")
 
 FLOW_REGISTRY = {
-    "data_pipeline": data_pipeline_flow,
+    "news_crawl": news_crawl_flow,
+    "stock_pipeline": stock_pipeline_flow,
     "data_cleanup": data_cleanup_flow,
 }
 
 # Map schedule YAML flow names to internal flow keys.
-# Individual crawler entries in the YAML are grouped into data_pipeline.
 SCHEDULE_TO_FLOW = {
-    "crawler_vietstock": "data_pipeline",
-    "crawler_cafef": "data_pipeline",
-    "crawler_vneconomy": "data_pipeline",
-    "stock_crawl": "data_pipeline",
+    "news_crawl": "news_crawl",
+    "stock_pipeline": "stock_pipeline",
     "data_cleanup": "data_cleanup",
 }
 
@@ -32,12 +30,9 @@ def _build_deployments(
 ) -> list:
     """Build Prefect deployment objects from schedule entries.
 
-    The YAML config has individual entries per crawler source, but our
-    architecture uses a single data_pipeline flow for all crawlers.
-    We pick the earliest cron from the crawler group and ignore duplicates.
-    data_cleanup maps 1:1 to data_cleanup_flow.
+    Each schedule entry creates its own deployment so that different cron
+    schedules for the same flow all fire independently.
     """
-    seen_flows: dict[str, str] = {}
     deployments = []
 
     for entry in schedules:
@@ -51,16 +46,12 @@ def _build_deployments(
             )
             continue
 
-        if flow_key in seen_flows:
-            continue
-
         flow_fn = FLOW_REGISTRY.get(flow_key)
         if flow_fn is None:
             continue
 
-        seen_flows[flow_key] = entry.cron
         deployment = flow_fn.to_deployment(
-            name=flow_key.replace("_", "-"),
+            name=entry.name.replace("_", "-"),
             cron=entry.cron,
         )
         deployments.append(deployment)
@@ -69,6 +60,7 @@ def _build_deployments(
             "deployment_registered",
             component="prefect_scheduler",
             flow=flow_key,
+            deployment=entry.name,
             cron=entry.cron,
         )
 
