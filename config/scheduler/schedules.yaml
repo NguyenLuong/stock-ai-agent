@@ -1,37 +1,38 @@
 # Prefect cron schedule definitions
+# All cron expressions are in UTC. Vietnam Time (VNT) = UTC+7.
 
 flows:
   morning_briefing:
-    cron: "0 7 * * 1-5"       # Weekdays at 7:00 AM
+    cron: "0 0 * * 1-5"       # 00:00 UTC = 07:00 VNT
     description: "Daily morning briefing pipeline"
     enabled: false             # Epic 4 scope — not yet implemented
 
   crawler_vietstock:
-    cron: "0 6,12,18 * * *"   # 3x daily
+    cron: "0 23,5,11 * * *"   # 23:00/05:00/11:00 UTC = 06:00/12:00/18:00 VNT
     description: "Vietstock news crawler"
     enabled: true
 
   crawler_cafef:
-    cron: "0 6,12,18 * * *"
+    cron: "0 23,5,11 * * *"   # 23:00/05:00/11:00 UTC = 06:00/12:00/18:00 VNT
     description: "CafeF news crawler"
     enabled: true
 
   crawler_vneconomy:
-    cron: "0 7,13,19 * * *"
+    cron: "0 0,6,12 * * *"    # 00:00/06:00/12:00 UTC = 07:00/13:00/19:00 VNT
     description: "VnEconomy news crawler"
     enabled: true
 
   stock_crawl:
-    cron: "0 10 * * 1-5"       # 10:00 UTC = 17:00 VN (after market close)
+    cron: "0 10 * * 1-5"      # 10:00 UTC = 17:00 VNT (after market close)
     description: "Stock price history crawl - weekdays after market close"
     enabled: true
 
   technical_indicators:
-    cron: "30 10 * * 1-5"      # 10:30 UTC = 17:30 VN (after stock_crawl completes)
+    cron: "30 10 * * 1-5"     # 10:30 UTC = 17:30 VNT (after stock_crawl completes)
     description: "Technical indicator calculation - weekdays after stock crawl"
     enabled: true
 
   data_cleanup:
-    cron: "0 2 * * *"          # Daily at 2:00 AM
+    cron: "0 19 * * *"        # 19:00 UTC = 02:00 VNT (next day)
     description: "30-day rolling window cleanup"
     enabled: true

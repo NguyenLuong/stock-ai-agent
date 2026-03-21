@@ -35,9 +35,9 @@
 
 | Crawler | Source | Schedule (UTC) | Rate Limit | Output Table | Ghi Chú |
 |---------|--------|----------------|------------|--------------|---------|
-| Vietstock | 5 RSS feeds | `0 6,12,18 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
-| CafeF | 5 RSS feeds | `0 6,12,18 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
-| VnEconomy | 4 RSS feeds | `0 7,13,19 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
+| Vietstock | 5 RSS feeds | `0 23,5,11 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
+| CafeF | 5 RSS feeds | `0 23,5,11 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
+| VnEconomy | 4 RSS feeds | `0 0,6,12 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
 | Stock Prices | vnstock API (VCI) | `0 10 * * 1-5` | 1s giữa tickers | market_data | ~44 tickers |
 | Tech Indicators | pandas-ta calc | `30 10 * * 1-5` | 0.1s giữa tickers | market_data | 10 indicators |
 | Embedding | OpenAI API | Sau crawl | Batch 100 | articles.embedding | 1536-dim vector |
@@ -63,7 +63,7 @@
 - `tai-chinh-quoc-te.rss` — category: **macro**
 - `ngan-hang.rss` — category: **macro**
 
-**Schedule:** `0 6,12,18 * * *` — 3 lần/ngày lúc 6:00, 12:00, 18:00 UTC (13:00, 19:00, 01:00 VN)
+**Schedule:** `0 23,5,11 * * *` — 3 lần/ngày lúc 06:00, 12:00, 18:00 VNT (23:00, 05:00, 11:00 UTC)
 
 **Cách hoạt động:**
 1. Fetch RSS XML từ 5 feeds (mỗi feed có category config)
@@ -89,7 +89,7 @@
 - `vi-mo-dau-tu.rss` — category: **macro**
 - `thi-truong.rss` — category: **stock**
 
-**Schedule:** `0 6,12,18 * * *` — cùng lịch với Vietstock
+**Schedule:** `0 23,5,11 * * *` — cùng lịch với Vietstock
 
 **Cách hoạt động:** Tương tự Vietstock, chỉ khác CSS selectors:
 - `div.detail-content` → `div#mainContent` → `div.contentdetail` → `<article>` → fallback
@@ -106,7 +106,7 @@
 - `tai-chinh.rss` — category: **macro**
 - `kinh-te-the-gioi.rss` — category: **macro**
 
-**Schedule:** `0 7,13,19 * * *` — 3 lần/ngày lúc 7:00, 13:00, 19:00 UTC
+**Schedule:** `0 0,6,12 * * *` — 3 lần/ngày lúc 07:00, 13:00, 19:00 VNT (00:00, 06:00, 12:00 UTC)
 
 **CSS selectors:**
 - `div.detail__content` → `div.article-body` → `div.content-detail` → `<article>` → fallback
@@ -320,7 +320,7 @@ Hàm `is_trading_day()` kiểm tra:
 
 **Source:** `services/crawler/lifecycle/lifecycle_pipeline.py`
 
-**Schedule:** `0 2 * * *` — hàng ngày lúc 2:00 AM UTC
+**Schedule:** `0 19 * * *` — hàng ngày lúc 02:00 VNT (19:00 UTC ngày trước)
 
 ### Cách Hoạt Động
 
@@ -352,13 +352,13 @@ Hàm `is_trading_day()` kiểm tra:
 
 | Flow | Cron (UTC) | Giờ VN | Mô Tả | Enabled |
 |------|-----------|--------|--------|---------|
-| crawler_vietstock | `0 6,12,18 * * *` | 13:00, 19:00, 01:00 | News crawl Vietstock | true |
-| crawler_cafef | `0 6,12,18 * * *` | 13:00, 19:00, 01:00 | News crawl CafeF | true |
-| crawler_vneconomy | `0 7,13,19 * * *` | 14:00, 20:00, 02:00 | News crawl VnEconomy | true |
+| crawler_vietstock | `0 23,5,11 * * *` | 06:00, 12:00, 18:00 | News crawl Vietstock | true |
+| crawler_cafef | `0 23,5,11 * * *` | 06:00, 12:00, 18:00 | News crawl CafeF | true |
+| crawler_vneconomy | `0 0,6,12 * * *` | 07:00, 13:00, 19:00 | News crawl VnEconomy | true |
 | stock_crawl | `0 10 * * 1-5` | 17:00 | Stock prices (sau đóng cửa) | true |
 | technical_indicators | `30 10 * * 1-5` | 17:30 | Indicators (sau stock crawl) | true |
-| data_cleanup | `0 2 * * *` | 09:00 | Lifecycle cleanup | true |
-| morning_briefing | `0 7 * * 1-5` | 14:00 | Morning briefing | **false** |
+| data_cleanup | `0 19 * * *` | 02:00 | Lifecycle cleanup | true |
+| morning_briefing | `0 0 * * 1-5` | 07:00 | Morning briefing | **false** |
 
 ### 8.2 Pipeline Flow
 
@@ -577,6 +577,12 @@ ORDER BY created_at DESC LIMIT 10;
 | Container restart | `docker logs scheduler` | Kiểm tra OOM, disk space, health checks |
 | App unreachable | Log: `ConnectError` từ scheduler | Kiểm tra app container running, network `http://app:8000` |
 | Auth failed | HTTP 403 từ internal endpoints | Verify header `X-Trigger-Source: prefect-scheduler` |
+
+Xem danh sách deployments đang serve
+`prefect deployment ls`
+
+Xem chi tiết 1 flow run
+`prefect flow-run inspect <flow-run-id>`
 
 ### 10.5 Database Issues
 
