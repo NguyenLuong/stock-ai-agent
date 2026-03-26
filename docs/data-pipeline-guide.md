@@ -398,6 +398,21 @@ Mỗi bước gọi HTTP POST đến Internal API. Nếu 1 bước fail → log 
 
 **Kết nối:** Prefect scheduler gọi qua `APP_URL` (default: `http://app:8000`).
 
+**News crawl (all sources)**
+curl -X POST http://localhost:8000/internal/trigger/crawl -H "X-Trigger-Source: prefect-scheduler"
+
+**Article embedding**
+curl -X POST http://localhost:8000/internal/trigger/embedding -H "X-Trigger-Source: prefect-scheduler"
+
+**Stock history crawl**
+curl -X POST http://localhost:8000/internal/trigger/stock-crawl -H "X-Trigger-Source: prefect-scheduler"
+
+**Technical indicator calculation**
+curl -X POST http://localhost:8000/internal/trigger/technical-indicators -H "X-Trigger-Source: prefect-scheduler"
+
+**Data lifecycle cleanup**
+curl -X POST http://localhost:8000/internal/trigger/lifecycle -H "X-Trigger-Source: prefect-scheduler"
+
 ### 8.4 Monitoring
 
 - **Prefect UI:** Dashboard theo dõi flow runs, task states, logs
