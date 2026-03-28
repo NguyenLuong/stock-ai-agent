@@ -60,6 +60,7 @@ async def semantic_search(
     query: str,
     top_k: int = 10,
     ticker_symbol: str | None = None,
+    category: str | None = None,
 ) -> list[Article]:
     """Semantic search over embedded articles using pgvector cosine distance."""
     query_vector = await embed_single(query)
@@ -68,6 +69,8 @@ async def semantic_search(
         stmt = select(Article).where(Article.embedded.is_(True))
         if ticker_symbol:
             stmt = stmt.where(Article.ticker_symbol == ticker_symbol)
+        if category:
+            stmt = stmt.where(Article.category == category)
         stmt = stmt.order_by(
             Article.embedding.cosine_distance(query_vector)
         ).limit(top_k)
