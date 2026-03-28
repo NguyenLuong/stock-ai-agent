@@ -1,7 +1,9 @@
-"""Prefect flow — automated data ingestion pipeline.
+"""Prefect flows — scheduled data pipelines.
 
-Orchestrates crawl → embedding → lifecycle via HTTP POST to the app service.
-Each step is independent: failure in one does not block the others.
+Three independent flows:
+- news_crawl_flow:  crawl → embedding
+- stock_flow:       stock-crawl → technical-indicators
+- data_cleanup_flow: lifecycle
 """
 
 import os
@@ -17,25 +19,21 @@ logger = get_logger("prefect_scheduler")
 
 APP_URL = os.environ.get("APP_URL", "http://app:8000")
 
-PIPELINE_STEPS = [
-    ("crawl", "Full news crawl (including macro news)"),
+NEWS_CRAWL_STEPS = [
+    ("crawl", "Full news crawl (all sources)"),
+    ("embedding", "Article embedding pipeline"),
+]
+
+STOCK_STEPS = [
     ("stock-crawl", "Stock price history crawl"),
     ("technical-indicators", "Technical indicator calculation"),
-    ("embedding", "Article embedding pipeline"),
-    ("lifecycle", "Data lifecycle cleanup"),
 ]
 
 
-@flow(name="data-pipeline", log_prints=True)
-async def data_pipeline_flow() -> dict:
-    """Orchestrate full data ingestion pipeline.
+async def _run_steps(flow_name: str, steps: list[tuple[str, str]]) -> dict:
+    """Execute a sequence of pipeline steps, logging each independently.
 
-    Sequence: crawl → stock-crawl → embedding → lifecycle.
-    Each step logs its result independently. Failures are logged but do not
-    block subsequent steps.
-
-    Returns:
-        Summary dict with per-step results and overall stats.
+    Failures in one step do not block subsequent steps.
     """
     start = time.monotonic()
     started_at = now_utc()
@@ -43,12 +41,12 @@ async def data_pipeline_flow() -> dict:
     errors: list[str] = []
 
     logger.info(
-        "data_pipeline_started",
+        f"{flow_name}_started",
         component="prefect_scheduler",
         started_at=started_at.isoformat(),
     )
 
-    for endpoint, description in PIPELINE_STEPS:
+    for endpoint, description in steps:
         step_start = time.monotonic()
         try:
             result = await trigger_pipeline(
@@ -64,6 +62,7 @@ async def data_pipeline_flow() -> dict:
             logger.info(
                 "pipeline_step_completed",
                 component="prefect_scheduler",
+                flow=flow_name,
                 step=endpoint,
                 description=description,
                 duration_seconds=duration,
@@ -79,6 +78,7 @@ async def data_pipeline_flow() -> dict:
             logger.error(
                 "pipeline_step_failed",
                 component="prefect_scheduler",
+                flow=flow_name,
                 step=endpoint,
                 description=description,
                 duration_seconds=duration,
@@ -90,7 +90,7 @@ async def data_pipeline_flow() -> dict:
         "started_at": started_at.isoformat(),
         "total_duration_seconds": total_duration,
         "steps": results,
-        "total_steps": len(PIPELINE_STEPS),
+        "total_steps": len(steps),
         "successful_steps": sum(
             1 for r in results.values() if r["status"] == "success"
         ),
@@ -99,7 +99,7 @@ async def data_pipeline_flow() -> dict:
     }
 
     logger.info(
-        "data_pipeline_completed",
+        f"{flow_name}_completed",
         component="prefect_scheduler",
         total_duration_seconds=total_duration,
         successful_steps=summary["successful_steps"],
@@ -109,9 +109,21 @@ async def data_pipeline_flow() -> dict:
     return summary
 
 
+@flow(name="news-crawl", log_prints=True)
+async def news_crawl_flow() -> dict:
+    """News ingestion pipeline: crawl all sources → embed articles."""
+    return await _run_steps("news_crawl", NEWS_CRAWL_STEPS)
+
+
+@flow(name="stock-pipeline", log_prints=True)
+async def stock_pipeline_flow() -> dict:
+    """Stock data pipeline: crawl prices → calculate technical indicators."""
+    return await _run_steps("stock_pipeline", STOCK_STEPS)
+
+
 @flow(name="data-cleanup", log_prints=True)
 async def data_cleanup_flow() -> dict:
-    """Trigger lifecycle cleanup independently (runs at 2:00 AM)."""
+    """Trigger lifecycle cleanup independently."""
     start = time.monotonic()
     started_at = now_utc()
 

@@ -13,20 +13,20 @@ from services.scheduler.main import _build_deployments, _handle_signal, FLOW_REG
 
 MOCK_SCHEDULES = [
     ScheduleEntry(
-        name="crawler_vietstock",
-        cron="0 6,12,18 * * *",
-        description="Vietstock news crawler",
+        name="news_crawl",
+        cron="0 23,5,11 * * *",
+        description="News crawl + embedding",
         enabled=True,
     ),
     ScheduleEntry(
-        name="crawler_cafef",
-        cron="0 6,12,18 * * *",
-        description="CafeF news crawler",
+        name="stock_pipeline",
+        cron="0 10 * * 1-5",
+        description="Stock crawl + technical indicators",
         enabled=True,
     ),
     ScheduleEntry(
         name="data_cleanup",
-        cron="0 2 * * *",
+        cron="0 19 * * *",
         description="Data cleanup",
         enabled=True,
     ),
@@ -36,24 +36,19 @@ MOCK_SCHEDULES = [
 class TestBuildDeployments:
     """Tests for _build_deployments."""
 
-    def test_deduplicates_data_pipeline(self):
-        """Multiple crawler schedules produce only one data-pipeline deployment."""
+    def test_each_schedule_creates_own_deployment(self):
+        """Each schedule entry creates a separate deployment."""
         deployments = _build_deployments(MOCK_SCHEDULES)
 
         deployment_names = [d.name for d in deployments]
-        assert deployment_names.count("data-pipeline") == 1
-
-    def test_data_cleanup_maps_to_own_flow(self):
-        """data_cleanup schedule produces a data-cleanup deployment."""
-        deployments = _build_deployments(MOCK_SCHEDULES)
-
-        deployment_names = [d.name for d in deployments]
+        assert "news-crawl" in deployment_names
+        assert "stock-pipeline" in deployment_names
         assert "data-cleanup" in deployment_names
 
     def test_total_deployments(self):
-        """Two deployments total: data-pipeline + data-cleanup."""
+        """One deployment per schedule entry."""
         deployments = _build_deployments(MOCK_SCHEDULES)
-        assert len(deployments) == 2
+        assert len(deployments) == 3
 
     def test_skips_unknown_flows(self):
         """Schedules not in SCHEDULE_TO_FLOW are skipped."""
@@ -69,12 +64,14 @@ class TestBuildDeployments:
         deployments = _build_deployments(unknown)
         assert len(deployments) == 0
 
-    def test_uses_first_cron_for_grouped_flows(self):
-        """data_pipeline uses cron from the first matching schedule entry."""
+    def test_each_deployment_has_correct_cron(self):
+        """Each deployment uses its own cron schedule."""
         deployments = _build_deployments(MOCK_SCHEDULES)
 
-        dp_deployment = [d for d in deployments if d.name == "data-pipeline"][0]
-        assert dp_deployment.schedules  # has schedules
+        by_name = {d.name: d for d in deployments}
+        assert by_name["news-crawl"].schedules
+        assert by_name["stock-pipeline"].schedules
+        assert by_name["data-cleanup"].schedules
 
     def test_empty_schedules(self):
         """No schedules returns empty list."""
@@ -91,8 +88,9 @@ class TestFlowRegistry:
             assert flow_key in FLOW_REGISTRY, f"Missing registry entry for {flow_key}"
 
     def test_registry_contains_expected_flows(self):
-        """Registry has data_pipeline and data_cleanup."""
-        assert "data_pipeline" in FLOW_REGISTRY
+        """Registry has news_crawl, stock_pipeline, and data_cleanup."""
+        assert "news_crawl" in FLOW_REGISTRY
+        assert "stock_pipeline" in FLOW_REGISTRY
         assert "data_cleanup" in FLOW_REGISTRY
 
 
@@ -113,8 +111,8 @@ class TestMain:
         mock_logging.assert_called_once()
         mock_load.assert_called_once()
         mock_serve.assert_called_once()
-        # serve should be called with 2 deployments
-        assert len(mock_serve.call_args.args) == 2
+        # serve should be called with 3 deployments (one per schedule entry)
+        assert len(mock_serve.call_args.args) == 3
 
     @patch("services.scheduler.main.serve", new_callable=AsyncMock)
     @patch("services.scheduler.main.load_schedules")

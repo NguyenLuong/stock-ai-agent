@@ -7,41 +7,45 @@
 ```
 [Prefect Scheduler] ── cron triggers ──> [FastAPI Internal Endpoints]
     │
-    ├── /internal/trigger/crawl
-    │       └── News Crawlers (Vietstock, CafeF, VnEconomy)
-    │               ↓ RSS feeds → parse HTML → extract tickers
-    │               ↓ Category tagging: "stock" hoặc "macro" từ feed config
-    │           [articles table] ── dedup by URL, category column
+    │  ┌─ news-crawl flow (3x/ngày) ─────────────────────────┐
+    ├──│ 1. POST /internal/trigger/crawl                      │
+    │  │    └── News Crawlers (Vietstock, CafeF, VnEconomy)   │
+    │  │        ↓ RSS feeds → parse HTML → extract tickers     │
+    │  │        ↓ Category tagging: "stock"/"macro" từ config  │
+    │  │        [articles table] ── dedup by URL               │
+    │  │ 2. POST /internal/trigger/embedding                   │
+    │  │    └── OpenAI text-embedding-3-small (1536-dim)       │
+    │  │        [articles.embedding] ── pgvector HNSW index    │
+    │  └──────────────────────────────────────────────────────-┘
     │
-    ├── /internal/trigger/stock-crawl
-    │       └── vnstock Client → OHLCV cho ~44 tickers
-    │           [market_data table] ── data_type = "stock_price"
+    │  ┌─ stock-pipeline flow (weekdays 17:00 VNT) ──────────┐
+    ├──│ 1. POST /internal/trigger/stock-crawl                │
+    │  │    └── vnstock Client → OHLCV cho ~44 tickers         │
+    │  │        [market_data table] ── data_type="stock_price" │
+    │  │ 2. POST /internal/trigger/technical-indicators        │
+    │  │    └── Indicator Calculator (pandas-ta) → 10 indicators│
+    │  │        [market_data table] ── data_type="technical_indicator"│
+    │  └───────────────────────────────────────────────────────┘
     │
-    ├── /internal/trigger/technical-indicators
-    │       └── Indicator Calculator (pandas-ta) → 10 indicators
-    │           [market_data table] ── data_type = "technical_indicator"
-    │
-    ├── /internal/trigger/embedding
-    │       └── Embedding Pipeline → OpenAI text-embedding-3-small (1536-dim)
-    │           [articles.embedding] ── pgvector HNSW index
-    │
-    └── /internal/trigger/lifecycle (daily 2:00 AM)
-            └── Lifecycle Pipeline
-                    ├── Summary (gpt-4o-mini) → articles.summary
-                    └── Clear raw_content (>30 ngày)
+    │  ┌─ data-cleanup flow (daily 02:00 VNT) ───────────────┐
+    └──│ 1. POST /internal/trigger/lifecycle                  │
+       │    └── Lifecycle Pipeline                             │
+       │        ├── Summary (gpt-4o-mini) → articles.summary   │
+       │        └── Clear raw_content (>30 ngày)               │
+       └───────────────────────────────────────────────────────┘
 ```
 
 ### Bảng Tổng Hợp Các Crawler
 
-| Crawler | Source | Schedule (UTC) | Rate Limit | Output Table | Ghi Chú |
-|---------|--------|----------------|------------|--------------|---------|
-| Vietstock | 5 RSS feeds | `0 23,5,11 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
-| CafeF | 5 RSS feeds | `0 23,5,11 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
-| VnEconomy | 4 RSS feeds | `0 0,6,12 * * *` | 1 RPS | articles | Dedup by URL, category tagging |
-| Stock Prices | vnstock API (VCI) | `0 10 * * 1-5` | 1s giữa tickers | market_data | ~44 tickers |
-| Tech Indicators | pandas-ta calc | `30 10 * * 1-5` | 0.1s giữa tickers | market_data | 10 indicators |
-| Embedding | OpenAI API | Sau crawl | Batch 100 | articles.embedding | 1536-dim vector |
-| Lifecycle | gpt-4o-mini | `0 2 * * *` | Batch 50 | articles.summary | >30 ngày |
+| Crawler | Source | Flow | Rate Limit | Output Table | Ghi Chú |
+|---------|--------|------|------------|--------------|---------|
+| Vietstock | 5 RSS feeds | news-crawl | 1 RPS | articles | Dedup by URL, category tagging |
+| CafeF | 5 RSS feeds | news-crawl | 1 RPS | articles | Dedup by URL, category tagging |
+| VnEconomy | 4 RSS feeds | news-crawl | 1 RPS | articles | Dedup by URL, category tagging |
+| Embedding | OpenAI API | news-crawl | Batch 100 | articles.embedding | 1536-dim vector, chạy sau crawl |
+| Stock Prices | vnstock API (VCI) | stock-pipeline | 1s giữa tickers | market_data | ~44 tickers |
+| Tech Indicators | pandas-ta calc | stock-pipeline | 0.1s giữa tickers | market_data | 10 indicators |
+| Lifecycle | gpt-4o-mini | data-cleanup | Batch 50 | articles.summary | >30 ngày |
 
 ### Database Schema Tổng Quan
 
@@ -63,7 +67,7 @@
 - `tai-chinh-quoc-te.rss` — category: **macro**
 - `ngan-hang.rss` — category: **macro**
 
-**Schedule:** `0 23,5,11 * * *` — 3 lần/ngày lúc 06:00, 12:00, 18:00 VNT (23:00, 05:00, 11:00 UTC)
+**Schedule:** Flow `news-crawl` — 3 lần/ngày lúc 06:00, 12:00, 18:00 VNT (`0 23,5,11 * * *` UTC)
 
 **Cách hoạt động:**
 1. Fetch RSS XML từ 5 feeds (mỗi feed có category config)
@@ -89,7 +93,7 @@
 - `vi-mo-dau-tu.rss` — category: **macro**
 - `thi-truong.rss` — category: **stock**
 
-**Schedule:** `0 23,5,11 * * *` — cùng lịch với Vietstock
+**Schedule:** Flow `news-crawl` — cùng lịch với Vietstock
 
 **Cách hoạt động:** Tương tự Vietstock, chỉ khác CSS selectors:
 - `div.detail-content` → `div#mainContent` → `div.contentdetail` → `<article>` → fallback
@@ -106,7 +110,7 @@
 - `tai-chinh.rss` — category: **macro**
 - `kinh-te-the-gioi.rss` — category: **macro**
 
-**Schedule:** `0 0,6,12 * * *` — 3 lần/ngày lúc 07:00, 13:00, 19:00 VNT (00:00, 06:00, 12:00 UTC)
+**Schedule:** Flow `news-crawl` — cùng lịch với Vietstock, CafeF
 
 **CSS selectors:**
 - `div.detail__content` → `div.article-body` → `div.content-detail` → `<article>` → fallback
@@ -186,7 +190,7 @@ Thay vì crawl số liệu vĩ mô từ APIs riêng (VN-Index, USD/VND, SBV...),
 
 **Source:** `services/crawler/market_data/stock_crawl_manager.py`
 
-**Schedule:** `0 10 * * 1-5` — hàng ngày trading days lúc 10:00 UTC (17:00 VN, sau khi thị trường đóng cửa)
+**Schedule:** Flow `stock-pipeline` — hàng ngày trading days lúc 17:00 VNT (`0 10 * * 1-5` UTC, sau khi thị trường đóng cửa)
 
 **Logic phân loại:**
 - Đếm rows hiện có cho mỗi ticker trong DB
@@ -256,7 +260,7 @@ Hàm `is_trading_day()` kiểm tra:
 
 **Source:** `services/crawler/market_data/indicator_calculator.py`, `indicator_manager.py`
 
-**Schedule:** `30 10 * * 1-5` — hàng ngày trading days lúc 10:30 UTC (17:30 VN, sau stock crawl 30 phút)
+**Schedule:** Flow `stock-pipeline` — chạy sau stock-crawl trong cùng flow
 
 ### Flow Tính Toán
 
@@ -296,7 +300,7 @@ Hàm `is_trading_day()` kiểm tra:
 
 **Source:** `services/crawler/embedding/embedding_pipeline.py`, `shared/llm/embedder.py`
 
-**Trigger:** `POST /internal/trigger/embedding` — chạy sau crawl trong pipeline flow
+**Trigger:** `POST /internal/trigger/embedding` — chạy sau crawl trong flow `news-crawl`
 
 ### Cách Hoạt Động
 
@@ -320,7 +324,7 @@ Hàm `is_trading_day()` kiểm tra:
 
 **Source:** `services/crawler/lifecycle/lifecycle_pipeline.py`
 
-**Schedule:** `0 19 * * *` — hàng ngày lúc 02:00 VNT (19:00 UTC ngày trước)
+**Schedule:** Flow `data-cleanup` — hàng ngày lúc 02:00 VNT (`0 19 * * *` UTC)
 
 ### Cách Hoạt Động
 
@@ -350,27 +354,33 @@ Hàm `is_trading_day()` kiểm tra:
 
 ### 8.1 Schedule Overview
 
-| Flow | Cron (UTC) | Giờ VN | Mô Tả | Enabled |
-|------|-----------|--------|--------|---------|
-| crawler_vietstock | `0 23,5,11 * * *` | 06:00, 12:00, 18:00 | News crawl Vietstock | true |
-| crawler_cafef | `0 23,5,11 * * *` | 06:00, 12:00, 18:00 | News crawl CafeF | true |
-| crawler_vneconomy | `0 0,6,12 * * *` | 07:00, 13:00, 19:00 | News crawl VnEconomy | true |
-| stock_crawl | `0 10 * * 1-5` | 17:00 | Stock prices (sau đóng cửa) | true |
-| technical_indicators | `30 10 * * 1-5` | 17:30 | Indicators (sau stock crawl) | true |
-| data_cleanup | `0 19 * * *` | 02:00 | Lifecycle cleanup | true |
+| Flow | Cron (UTC) | Giờ VN | Steps | Enabled |
+|------|-----------|--------|-------|---------|
+| news_crawl | `0 23,5,11 * * *` | 06:00, 12:00, 18:00 | crawl → embedding | true |
+| stock_pipeline | `0 10 * * 1-5` | 17:00 (sau đóng cửa) | stock-crawl → technical-indicators | true |
+| data_cleanup | `0 19 * * *` | 02:00 | lifecycle | true |
 | morning_briefing | `0 0 * * 1-5` | 07:00 | Morning briefing | **false** |
 
-### 8.2 Pipeline Flow
+### 8.2 Pipeline Flows
 
-Flow `data-pipeline` chạy 5 bước **tuần tự**:
+Hệ thống có 3 flow độc lập, mỗi flow chạy các bước **tuần tự**:
 
+**news-crawl** — Crawl tin tức từ tất cả sources + embed bài viết:
 ```
-crawl → stock-crawl → technical-indicators → embedding → lifecycle
+crawl → embedding
+```
+
+**stock-pipeline** — Crawl giá cổ phiếu + tính technical indicators:
+```
+stock-crawl → technical-indicators
+```
+
+**data-cleanup** — Dọn dẹp dữ liệu cũ:
+```
+lifecycle
 ```
 
 Mỗi bước gọi HTTP POST đến Internal API. Nếu 1 bước fail → log error → tiếp tục bước tiếp (không block pipeline).
-
-Flow `data-cleanup` chạy riêng lúc 2:00 AM — chỉ trigger lifecycle endpoint.
 
 ### 8.3 Internal API Triggers
 
@@ -378,15 +388,30 @@ Flow `data-cleanup` chạy riêng lúc 2:00 AM — chỉ trigger lifecycle endpo
 **Prefix:** `/internal/trigger`
 **Authentication:** Header `X-Trigger-Source: prefect-scheduler` (bắt buộc, trả 403 nếu thiếu)
 
-| Endpoint | Method | Mô Tả |
-|----------|--------|--------|
-| `/internal/trigger/crawl` | POST | News crawl (including macro news) |
-| `/internal/trigger/stock-crawl` | POST | Stock history crawl |
-| `/internal/trigger/technical-indicators` | POST | Technical indicator calculation |
-| `/internal/trigger/embedding` | POST | Article embedding |
-| `/internal/trigger/lifecycle` | POST | Data lifecycle cleanup |
+| Endpoint | Method | Flow | Mô Tả |
+|----------|--------|------|--------|
+| `/internal/trigger/crawl` | POST | news-crawl | News crawl tất cả sources (including macro news) |
+| `/internal/trigger/embedding` | POST | news-crawl | Article embedding |
+| `/internal/trigger/stock-crawl` | POST | stock-pipeline | Stock history crawl |
+| `/internal/trigger/technical-indicators` | POST | stock-pipeline | Technical indicator calculation |
+| `/internal/trigger/lifecycle` | POST | data-cleanup | Data lifecycle cleanup |
 
 **Kết nối:** Prefect scheduler gọi qua `APP_URL` (default: `http://app:8000`).
+
+**News crawl (all sources)**
+curl -X POST http://localhost:8000/internal/trigger/crawl -H "X-Trigger-Source: prefect-scheduler"
+
+**Article embedding**
+curl -X POST http://localhost:8000/internal/trigger/embedding -H "X-Trigger-Source: prefect-scheduler"
+
+**Stock history crawl**
+curl -X POST http://localhost:8000/internal/trigger/stock-crawl -H "X-Trigger-Source: prefect-scheduler"
+
+**Technical indicator calculation**
+curl -X POST http://localhost:8000/internal/trigger/technical-indicators -H "X-Trigger-Source: prefect-scheduler"
+
+**Data lifecycle cleanup**
+curl -X POST http://localhost:8000/internal/trigger/lifecycle -H "X-Trigger-Source: prefect-scheduler"
 
 ### 8.4 Monitoring
 

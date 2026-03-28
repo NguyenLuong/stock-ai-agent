@@ -7,29 +7,14 @@ flows:
     description: "Daily morning briefing pipeline"
     enabled: false             # Epic 4 scope — not yet implemented
 
-  crawler_vietstock:
+  news_crawl:
     cron: "0 23,5,11 * * *"   # 23:00/05:00/11:00 UTC = 06:00/12:00/18:00 VNT
-    description: "Vietstock news crawler"
+    description: "News crawl (all sources) + embedding"
     enabled: true
 
-  crawler_cafef:
-    cron: "0 23,5,11 * * *"   # 23:00/05:00/11:00 UTC = 06:00/12:00/18:00 VNT
-    description: "CafeF news crawler"
-    enabled: true
-
-  crawler_vneconomy:
-    cron: "0 0,6,12 * * *"    # 00:00/06:00/12:00 UTC = 07:00/13:00/19:00 VNT
-    description: "VnEconomy news crawler"
-    enabled: true
-
-  stock_crawl:
+  stock_pipeline:
     cron: "0 10 * * 1-5"      # 10:00 UTC = 17:00 VNT (after market close)
-    description: "Stock price history crawl - weekdays after market close"
-    enabled: true
-
-  technical_indicators:
-    cron: "30 10 * * 1-5"     # 10:30 UTC = 17:30 VNT (after stock_crawl completes)
-    description: "Technical indicator calculation - weekdays after stock crawl"
+    description: "Stock price crawl + technical indicators"
     enabled: true
 
   data_cleanup:
