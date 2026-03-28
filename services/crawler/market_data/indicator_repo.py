@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 import pandas as pd
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 
 from shared.db.client import get_async_session
 from shared.db.orm.market_data import MarketData
@@ -102,6 +102,69 @@ async def save_technical_indicators(
     )
     return inserted + updated
 
+
+
+async def get_latest_indicators(
+    ticker: str,
+) -> tuple[dict[str, Decimal | None], datetime | None]:
+    """Fetch the most recent value for each technical indicator from market_data.
+
+    Returns tuple: (dict mapping indicator_name → indicator_value, data_as_of of newest record).
+    When no indicators exist: ({}, None).
+    """
+    async with get_async_session() as session:
+        # Subquery: latest data_as_of per indicator_name for this ticker
+        latest_sq = (
+            select(
+                MarketData.indicator_name,
+                func.max(MarketData.data_as_of).label("max_as_of"),
+            )
+            .where(
+                MarketData.ticker_symbol == ticker,
+                MarketData.data_type == "technical_indicator",
+            )
+            .group_by(MarketData.indicator_name)
+        ).subquery()
+
+        # Join back to get indicator_value for each latest record
+        query = (
+            select(
+                MarketData.indicator_name,
+                MarketData.indicator_value,
+                MarketData.data_as_of,
+            )
+            .join(
+                latest_sq,
+                (MarketData.indicator_name == latest_sq.c.indicator_name)
+                & (MarketData.data_as_of == latest_sq.c.max_as_of),
+            )
+            .where(
+                MarketData.ticker_symbol == ticker,
+                MarketData.data_type == "technical_indicator",
+            )
+        )
+
+        result = await session.execute(query)
+        rows = result.all()
+
+    if not rows:
+        return {}, None
+
+    indicators: dict[str, Decimal | None] = {}
+    latest_as_of: datetime | None = None
+    for name, value, as_of in rows:
+        indicators[name] = value
+        if latest_as_of is None or as_of > latest_as_of:
+            latest_as_of = as_of
+
+    logger.info(
+        "latest_indicators_fetched",
+        ticker=ticker,
+        indicator_count=len(indicators),
+        data_as_of=latest_as_of.isoformat() if latest_as_of else None,
+        component="technical_indicators",
+    )
+    return indicators, latest_as_of
 
 
 async def get_stock_prices_df(ticker: str, limit: int = 300) -> pd.DataFrame:
