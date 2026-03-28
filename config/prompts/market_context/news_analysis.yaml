@@ -1,5 +1,5 @@
 # Market Context Agent — news synthesis prompt
-# Variables: articles (list[dict] with title, source, published_at, content),
+# Variables: articles (list[dict] with title, source, published_at, raw_content, summary),
 #            query (str), analysis_date (str ISO 8601)
 name: market_context_news_analysis
 version: "1.0"
@@ -11,13 +11,17 @@ template: |
   **Ngày phân tích:** {{ analysis_date }}
   **Truy vấn:** {{ query }}
 
+  {% if articles %}
   **Bài báo liên quan ({{ articles | length }} bài):**
   {% for article in articles %}
   ---
   Nguồn: {{ article.source }} | Thời gian: {{ article.published_at }}
   Tiêu đề: {{ article.title }}
-  Nội dung: {{ article.content }}
+  Nội dung: {{ article.raw_content }}
   {% endfor %}
+  {% else %}
+  Không có tin tức mới trong khoảng thời gian phân tích.
+  {% endif %}
 
   **Yêu cầu phân tích:**
   1. Tóm tắt xu hướng chính từ tin tức (3-5 bullet points)

@@ -309,7 +309,7 @@ class TestRunStockCrawl:
 
         # Sleep called between tickers (after first ticker, before second)
         assert mock_sleep.call_count >= 1
-        mock_sleep.assert_any_call(1.0)
+        mock_sleep.assert_any_call(4.0)
 
     @patch("services.crawler.market_data.stock_crawl_manager.load_ticker_config")
     @patch("services.crawler.market_data.stock_crawl_manager.count_stock_prices_batch")

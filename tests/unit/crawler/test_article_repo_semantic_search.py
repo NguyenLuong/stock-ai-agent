@@ -143,6 +143,48 @@ class TestSemanticSearch:
 
     @patch("services.crawler.news.article_repo.get_async_session")
     @patch("services.crawler.news.article_repo.embed_single")
+    async def test_filters_by_category(
+        self, mock_embed, mock_get_session, mock_session
+    ):
+        mock_embed.return_value = [0.1] * 1536
+
+        articles = [_make_orm_article("Macro Article")]
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = articles
+        mock_session.execute = AsyncMock(return_value=result_mock)
+        mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_get_session.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        results = await semantic_search(
+            "thị trường vĩ mô", top_k=20, category="macro"
+        )
+
+        assert len(results) == 1
+        executed_stmt = mock_session.execute.call_args[0][0]
+        compiled_sql = str(executed_stmt)
+        assert "category" in compiled_sql
+
+    @patch("services.crawler.news.article_repo.get_async_session")
+    @patch("services.crawler.news.article_repo.embed_single")
+    async def test_no_category_filter_when_not_provided(
+        self, mock_embed, mock_get_session, mock_session
+    ):
+        mock_embed.return_value = [0.1] * 1536
+
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = []
+        mock_session.execute = AsyncMock(return_value=result_mock)
+        mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_get_session.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        await semantic_search("test query")
+
+        executed_stmt = mock_session.execute.call_args[0][0]
+        where_sql = str(executed_stmt.whereclause)
+        assert "category" not in where_sql
+
+    @patch("services.crawler.news.article_repo.get_async_session")
+    @patch("services.crawler.news.article_repo.embed_single")
     async def test_default_top_k_is_10(
         self, mock_embed, mock_get_session, mock_session
     ):
