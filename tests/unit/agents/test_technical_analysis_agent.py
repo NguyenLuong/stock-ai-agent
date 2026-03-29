@@ -15,6 +15,7 @@ from services.app.agents.technical_analysis.node import (
     _build_ohlcv_for_prompt,
     _calc_confidence,
     _calculate_support_resistance,
+    _deduplicate_levels,
     _determine_trend,
     technical_analysis_node,
 )
@@ -161,22 +162,22 @@ class TestBuildIndicatorDicts:
 class TestDetermineTrend:
     def test_uptrend(self) -> None:
         sma = {"sma_20": 30000, "sma_50": 28000, "sma_200": 26000}
-        assert _determine_trend(sma, 31000) == "uptrend"
+        assert _determine_trend(sma) == "uptrend"
 
     def test_downtrend(self) -> None:
         sma = {"sma_20": 26000, "sma_50": 28000, "sma_200": 30000}
-        assert _determine_trend(sma, 25000) == "downtrend"
+        assert _determine_trend(sma) == "downtrend"
 
     def test_sideways(self) -> None:
         sma = {"sma_20": 28000, "sma_50": 30000, "sma_200": 26000}
-        assert _determine_trend(sma, 28000) == "sideways"
+        assert _determine_trend(sma) == "sideways"
 
     def test_none_sma(self) -> None:
-        assert _determine_trend(None, 28000) == "sideways"
+        assert _determine_trend(None) == "sideways"
 
     def test_missing_keys(self) -> None:
         sma = {"sma_20": 28000}  # Missing sma_50, sma_200
-        assert _determine_trend(sma, 28000) == "sideways"
+        assert _determine_trend(sma) == "sideways"
 
 
 # ---------------------------------------------------------------------------
@@ -601,3 +602,93 @@ class TestNodeLogging:
         assert "ohlcv_retrieval_started" in log_events
         assert "ohlcv_retrieval_completed" in log_events
         assert "agent_completed" in log_events
+
+
+# ---------------------------------------------------------------------------
+# [M2] Test _deduplicate_levels
+# ---------------------------------------------------------------------------
+
+
+class TestDeduplicateLevels:
+    def test_empty_list(self) -> None:
+        assert _deduplicate_levels([]) == []
+
+    def test_single_value(self) -> None:
+        assert _deduplicate_levels([28000.0]) == [28000.0]
+
+    def test_merges_within_tolerance(self) -> None:
+        """Values within 2% of each other are merged (keeps first)."""
+        # 28000 and 28500: diff = 500/28000 ≈ 1.78% < 2% → merged
+        result = _deduplicate_levels([28000.0, 28500.0], tolerance=0.02)
+        assert result == [28000.0]
+
+    def test_keeps_values_beyond_tolerance(self) -> None:
+        """Values more than 2% apart are kept."""
+        # 28000 and 29000: diff = 1000/28000 ≈ 3.57% > 2% → kept
+        result = _deduplicate_levels([28000.0, 29000.0], tolerance=0.02)
+        assert result == [28000.0, 29000.0]
+
+    def test_sorts_input(self) -> None:
+        """Unsorted input is handled correctly."""
+        result = _deduplicate_levels([30000.0, 28000.0, 29000.0], tolerance=0.02)
+        assert result == sorted(result)
+
+    def test_near_zero_guard(self) -> None:
+        """Near-zero values don't cause division by zero."""
+        result = _deduplicate_levels([0.0, 100.0])
+        assert 0.0 in result
+        assert 100.0 in result
+
+
+# ---------------------------------------------------------------------------
+# [M1] Test data retrieval failure paths
+# ---------------------------------------------------------------------------
+
+
+class TestNodeIndicatorRetrievalFailure:
+    @patch(_PATCH_CONFIG)
+    @patch(_PATCH_LOAD_PROMPT)
+    @patch(_PATCH_LLM_CLIENT)
+    @patch(_PATCH_GET_PRICES)
+    @patch(_PATCH_GET_INDICATORS)
+    async def test_indicator_fetch_raises_falls_back_to_empty(
+        self, mock_indicators, mock_prices, mock_llm_cls, mock_load, mock_config,
+    ) -> None:
+        """If get_latest_indicators raises, node continues with empty indicators."""
+        mock_indicators.side_effect = Exception("DB connection failed")
+        mock_prices.return_value = _make_ohlcv_df(50)
+
+        mock_llm = AsyncMock()
+        mock_llm.call.return_value = "analysis text"
+        mock_llm_cls.return_value = mock_llm
+
+        _setup_prompt_mock(mock_load)
+        _setup_config_mock(mock_config)
+
+        result = await technical_analysis_node(_base_state())
+
+        # Should still produce output (with empty indicators, LLM still runs)
+        assert result["technical_analysis"] is not None
+
+
+class TestNodeOhlcvRetrievalFailure:
+    @patch(_PATCH_CONFIG)
+    @patch(_PATCH_LLM_CLIENT)
+    @patch(_PATCH_GET_PRICES)
+    @patch(_PATCH_GET_INDICATORS)
+    async def test_ohlcv_fetch_raises_returns_insufficient_data(
+        self, mock_indicators, mock_prices, mock_llm_cls, mock_config,
+    ) -> None:
+        """If get_stock_prices_df raises, node returns insufficient data error."""
+        mock_indicators.return_value = (_full_raw_indicators(), datetime(2026, 3, 28, tzinfo=timezone.utc))
+        mock_prices.side_effect = Exception("DB connection failed")
+
+        mock_llm_cls.return_value = AsyncMock()
+        _setup_config_mock(mock_config)
+
+        result = await technical_analysis_node(_base_state())
+
+        # Empty DataFrame has 0 rows < MIN_OHLCV_ROWS → insufficient data path
+        assert result["technical_analysis"] is None
+        assert "Không đủ dữ liệu" in result["error"]
+        assert "technical_analysis" in result["failed_agents"]

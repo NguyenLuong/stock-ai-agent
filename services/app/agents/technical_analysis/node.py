@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -79,7 +80,7 @@ def _build_indicator_dicts(
     return groups
 
 
-def _determine_trend(sma: dict | None, current_price: float | None) -> str:
+def _determine_trend(sma: dict | None) -> str:
     """Determine trend from MA cross. Safe default: 'sideways'."""
     if sma is None:
         return "sideways"
@@ -152,7 +153,7 @@ def _deduplicate_levels(levels: list[float], tolerance: float = 0.02) -> list[fl
     sorted_levels = sorted(levels)
     deduped = [sorted_levels[0]]
     for level in sorted_levels[1:]:
-        if deduped[-1] == 0 or abs(level - deduped[-1]) / abs(deduped[-1]) > tolerance:
+        if abs(deduped[-1]) < 1e-9 or abs(level - deduped[-1]) / abs(deduped[-1]) > tolerance:
             deduped.append(level)
     return deduped
 
@@ -161,18 +162,12 @@ def _build_ohlcv_for_prompt(
     ohlcv_df: pd.DataFrame, last_n: int = 30,
 ) -> list[dict]:
     """Convert last N rows of OHLCV DataFrame to list[dict] for prompt."""
-    recent = ohlcv_df.tail(last_n)
-    result = []
-    for _, row in recent.iterrows():
-        result.append({
-            "date": str(row["time"]),
-            "open": float(row["open"]),
-            "high": float(row["high"]),
-            "low": float(row["low"]),
-            "close": float(row["close"]),
-            "volume": float(row["volume"]),
-        })
-    return result
+    recent = ohlcv_df.tail(last_n).copy()
+    recent = recent.rename(columns={"time": "date"})
+    recent["date"] = recent["date"].astype(str)
+    for col in ("open", "high", "low", "close", "volume"):
+        recent[col] = recent[col].astype(float)
+    return recent[["date", "open", "high", "low", "close", "volume"]].to_dict(orient="records")
 
 
 def _calc_confidence(
@@ -196,15 +191,12 @@ def _calc_confidence(
     elif ohlcv_count >= 30:
         score += 0.05
 
-    # Indicator availability (count non-None groups that have actual values)
+    # Indicator availability — count using INDICATOR_MAPPING (authoritative list of 19 indicators)
     available_count = 0
-    for group_key in _ALL_GROUPS:
+    for ind_name, (group_key, field_key) in INDICATOR_MAPPING.items():
         group = indicator_dicts.get(group_key)
-        if group is not None:
-            # Count individual indicator values within the group
-            for k, v in group.items():
-                if k != "period" and k != "current_price" and v is not None:
-                    available_count += 1
+        if group is not None and group.get(field_key) is not None:
+            available_count += 1
 
     if available_count >= 15:
         score += 0.10
@@ -294,7 +286,7 @@ async def technical_analysis_node(state: TechnicalAnalysisState) -> dict:
             "failed_agents": failed_agents,
         }
 
-    # Fallback: recalculate indicators on-the-fly if DB has none
+    # Fallback: recalculate indicators on-the-fly if DB has none (M3: run sync in thread)
     if not raw_indicators:
         logger.warning(
             "no_indicators_in_db_recalculating",
@@ -302,7 +294,9 @@ async def technical_analysis_node(state: TechnicalAnalysisState) -> dict:
             ticker=ticker,
         )
         try:
-            records = calculate_indicators(ticker, ohlcv_df, df_vnindex=None)
+            records = await asyncio.to_thread(
+                calculate_indicators, ticker, ohlcv_df, None,
+            )
             raw_indicators = {}
             latest_as_of: datetime | None = None
             for rec in records:
@@ -327,10 +321,16 @@ async def technical_analysis_node(state: TechnicalAnalysisState) -> dict:
     if indicator_dicts.get("donchian") is not None:
         indicator_dicts["donchian"]["current_price"] = current_price
 
+    # Pre-compute data processing shared by Phase 2 and Phase 3 (H2/H3: outside try blocks)
+    trend = _determine_trend(indicator_dicts.get("sma"))
+    support_levels, resistance_levels = _calculate_support_resistance(ohlcv_df)
+    ohlcv_for_prompt = _build_ohlcv_for_prompt(ohlcv_df, last_n=30)
+
     indicator_summary: str | None = None
     pattern_summary: str | None = None
     phase1_ok = False
     phase2_ok = False
+    failed_agents_modified = False
 
     # ── Phase 1: Indicator Analysis (LLM) ───────────────────────────────
     try:
@@ -371,13 +371,9 @@ async def technical_analysis_node(state: TechnicalAnalysisState) -> dict:
         )
         indicator_summary = None
 
-    # ── Phase 2: Pattern Recognition (LLM) ──────────────────────────────
+    # ── Phase 2: Pattern Recognition (LLM only — data already prepared) ─
     try:
         logger.info("llm_call_started", component="technical_analysis", phase="pattern_recognition")
-        trend = _determine_trend(indicator_dicts.get("sma"), current_price)
-        support_levels, resistance_levels = _calculate_support_resistance(ohlcv_df)
-        ohlcv_for_prompt = _build_ohlcv_for_prompt(ohlcv_df, last_n=30)
-
         pattern_prompt = load_prompt(
             "technical_analysis/pattern_recognition",
             ticker=ticker,
@@ -414,16 +410,14 @@ async def technical_analysis_node(state: TechnicalAnalysisState) -> dict:
         logger.error("all_phases_failed", component="technical_analysis")
         if "technical_analysis" not in failed_agents:
             failed_agents.append("technical_analysis")
+            failed_agents_modified = True
         return {
             "technical_analysis": None,
             "error": "Technical Analysis: both indicator and pattern phases failed",
             "failed_agents": failed_agents,
         }
 
-    # Build signals dict (rule-based)
-    trend = _determine_trend(indicator_dicts.get("sma"), current_price)
-
-    # Momentum from RSI + MACD
+    # Build signals dict (rule-based) — trend already computed above
     rsi_group = indicator_dicts.get("rsi")
     macd_group = indicator_dicts.get("macd")
     rsi_val = rsi_group.get("value") if rsi_group else None
@@ -471,10 +465,6 @@ async def technical_analysis_node(state: TechnicalAnalysisState) -> dict:
     vol_ratio = vol_group.get("ratio") if vol_group else None
     volume_confirmation = vol_ratio is not None and vol_ratio > 1.5
 
-    # Support/resistance (may already be computed in Phase 2, recalculate if Phase 2 failed)
-    if not phase2_ok:
-        support_levels, resistance_levels = _calculate_support_resistance(ohlcv_df)
-
     signals = {
         "trend": trend,
         "momentum": momentum,
@@ -512,6 +502,6 @@ async def technical_analysis_node(state: TechnicalAnalysisState) -> dict:
     )
 
     result: dict = {"technical_analysis": technical_analysis}
-    if failed_agents != list(state.get("failed_agents", [])):
+    if failed_agents_modified:
         result["failed_agents"] = failed_agents
     return result
