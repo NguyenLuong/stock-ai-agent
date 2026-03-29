@@ -74,3 +74,50 @@ class TechnicalAnalysisState(TypedDict, total=False):
 
     failed_agents: list[str]
     error: str
+
+
+class FundamentalAnalysisState(TypedDict, total=False):
+    """State for the Fundamental Analysis Agent LangGraph node.
+
+    Input fields are set by the orchestrator; output fields
+    are populated by the agent node itself.
+    """
+
+    # --- Input fields (set by orchestrator) ---
+    ticker: str
+    analysis_type: str  # "morning_briefing" | "alert" | "deep_analysis"
+    analysis_date: str  # ISO date string, e.g. "2026-03-29"
+
+    # --- Output fields ---
+    fundamental_analysis: dict | None
+    # fundamental_analysis structure:
+    # {
+    #     "bctc_summary": str | None,          # Phase 1 output — LLM BCTC analysis
+    #     "ratio_comparison": str | None,       # Phase 2 output — LLM ratio comparison
+    #     "company_ratios": {                   # Raw ratio values from DB
+    #         "pe": float | None,
+    #         "pb": float | None,
+    #         "roe": float | None,
+    #         "eps": float | None,
+    #         "eps_growth_yoy": float | None,
+    #     },
+    #     "sector_ratios": {                    # Sector averages
+    #         "pe": float | None,
+    #         "pb": float | None,
+    #         "roe": float | None,
+    #         "eps": float | None,
+    #     },
+    #     "sector_name": str,                   # Vietnamese sector name
+    #     "signals": {
+    #         "valuation": str,                 # "undervalued" | "overvalued" | "fair"
+    #         "profitability": str,             # "strong" | "weak" | "average"
+    #         "financial_health": str,          # "healthy" | "risky" | "neutral"
+    #         "growth": str,                    # "growing" | "declining" | "stable"
+    #     },
+    #     "confidence": float,                  # 0.0-0.95
+    #     "data_as_of": str,                    # ISO timestamp
+    #     "data_source": str,                   # "vnstock" | "mock"
+    # }
+
+    failed_agents: list[str]
+    error: str

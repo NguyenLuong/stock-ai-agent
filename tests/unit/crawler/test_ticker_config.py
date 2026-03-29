@@ -10,6 +10,7 @@ import yaml
 
 from services.crawler.market_data.ticker_config import (
     TickerConfig,
+    get_sector_for_ticker,
     load_ticker_config,
 )
 
@@ -116,3 +117,75 @@ class TestLoadTickerConfig:
         assert date(2026, 2, 16) in result.holidays
         assert date(2026, 2, 17) in result.holidays
         assert date(2026, 2, 18) in result.holidays
+
+
+@pytest.fixture
+def sector_config_path(tmp_path: Path) -> Path:
+    """Config with multiple enabled sector groups for get_sector_for_ticker tests."""
+    config = {
+        "groups": {
+            "vn30": {
+                "enabled": True,
+                "description": "VN30",
+                "tickers": ["VNM", "VHM", "HPG", "VCB", "SSI", "GAS"],
+            },
+            "steel": {
+                "enabled": True,
+                "description": "Thep",
+                "tickers": ["HPG", "HSG", "NKG", "TLH"],
+            },
+            "banking": {
+                "enabled": True,
+                "description": "Ngan hang",
+                "tickers": ["VCB", "BID", "CTG"],
+            },
+            "oil_gas": {
+                "enabled": True,
+                "description": "Dau khi",
+                "tickers": ["GAS", "PLX"],
+            },
+            "securities": {
+                "enabled": True,
+                "description": "Chung khoan",
+                "tickers": ["SSI", "VND"],
+            },
+        },
+    }
+    config_file = tmp_path / "stock_tickers.yaml"
+    config_file.write_text(yaml.dump(config))
+    return config_file
+
+
+class TestGetSectorForTicker:
+    """Tests for get_sector_for_ticker."""
+
+    def test_ticker_in_sector_group(self, sector_config_path: Path) -> None:
+        """Test ticker found in a sector group (not vn30)."""
+        sector_name, tickers = get_sector_for_ticker("HPG", config_path=sector_config_path)
+        assert sector_name == "Thép"
+        assert "HPG" in tickers
+        assert "HSG" in tickers
+
+    def test_ticker_only_in_vn30(self, sector_config_path: Path) -> None:
+        """Test ticker only in vn30 returns VN30 sector."""
+        sector_name, tickers = get_sector_for_ticker("VNM", config_path=sector_config_path)
+        assert sector_name == "VN30"
+        assert "VNM" in tickers
+
+    def test_ticker_not_found(self, sector_config_path: Path) -> None:
+        """Test ticker not in any group returns unknown."""
+        sector_name, tickers = get_sector_for_ticker("XYZ", config_path=sector_config_path)
+        assert sector_name == "Không xác định"
+        assert tickers == ["XYZ"]
+
+    def test_banking_sector(self, sector_config_path: Path) -> None:
+        """Test banking sector detection."""
+        sector_name, tickers = get_sector_for_ticker("VCB", config_path=sector_config_path)
+        assert sector_name == "Ngân hàng"
+        assert "BID" in tickers
+
+    def test_securities_sector(self, sector_config_path: Path) -> None:
+        """Test securities sector detection."""
+        sector_name, tickers = get_sector_for_ticker("SSI", config_path=sector_config_path)
+        assert sector_name == "Chứng khoán"
+        assert "VND" in tickers

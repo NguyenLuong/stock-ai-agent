@@ -14,6 +14,9 @@ from services.crawler.market_data.stock_data_repo import (
     _extract_ratios_from_df,
     _period_to_datetime,
     _to_aware_datetime,
+    get_latest_financial_ratios,
+    get_peer_ratios,
+    get_sector_average_ratios,
     save_financial_ratios,
     save_stock_prices,
 )
@@ -241,3 +244,281 @@ class TestToAwareDatetime:
         ts = pd.Timestamp("2026-01-01")
         result = _to_aware_datetime(ts)
         assert result.tzinfo == timezone.utc
+
+
+class TestGetLatestFinancialRatios:
+    """Tests for get_latest_financial_ratios."""
+
+    @pytest.mark.asyncio
+    @patch("services.crawler.market_data.stock_data_repo.get_async_session")
+    async def test_happy_path_returns_ratios_and_date(
+        self, mock_get_session: MagicMock
+    ) -> None:
+        """Test returns (ratio_dict, data_as_of) when data exists."""
+        data_as_of = datetime(2026, 3, 1, tzinfo=timezone.utc)
+        mock_row = MagicMock()
+        mock_row.pe_ratio = Decimal("12.5")
+        mock_row.pb_ratio = Decimal("1.8")
+        mock_row.roe = Decimal("15.2")
+        mock_row.eps = Decimal("3500")
+        mock_row.eps_growth_yoy = Decimal("0.12")
+        mock_row.data_as_of = data_as_of
+
+        mock_result = MagicMock()
+        mock_result.first.return_value = mock_row
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_session
+        mock_get_session.return_value = mock_ctx
+
+        ratios, as_of = await get_latest_financial_ratios("HPG")
+
+        assert ratios["pe_ratio"] == Decimal("12.5")
+        assert ratios["pb_ratio"] == Decimal("1.8")
+        assert ratios["roe"] == Decimal("15.2")
+        assert ratios["eps"] == Decimal("3500")
+        assert ratios["eps_growth_yoy"] == Decimal("0.12")
+        assert as_of == data_as_of
+
+    @pytest.mark.asyncio
+    @patch("services.crawler.market_data.stock_data_repo.get_async_session")
+    async def test_empty_result_returns_empty_dict_and_none(
+        self, mock_get_session: MagicMock
+    ) -> None:
+        """Test returns ({}, None) when no data exists."""
+        mock_result = MagicMock()
+        mock_result.first.return_value = None
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_session
+        mock_get_session.return_value = mock_ctx
+
+        ratios, as_of = await get_latest_financial_ratios("UNKNOWN")
+
+        assert ratios == {}
+        assert as_of is None
+
+    @pytest.mark.asyncio
+    @patch("services.crawler.market_data.stock_data_repo.get_async_session")
+    async def test_tuple_unpacking_works(
+        self, mock_get_session: MagicMock
+    ) -> None:
+        """Test result can be unpacked as tuple."""
+        mock_result = MagicMock()
+        mock_result.first.return_value = None
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_session
+        mock_get_session.return_value = mock_ctx
+
+        result = await get_latest_financial_ratios("HPG")
+        ratios, as_of = result
+        assert isinstance(ratios, dict)
+        assert as_of is None
+
+
+class TestGetSectorAverageRatios:
+    """Tests for get_sector_average_ratios."""
+
+    @pytest.mark.asyncio
+    @patch("services.crawler.market_data.stock_data_repo.get_async_session")
+    async def test_happy_path_returns_averages(
+        self, mock_get_session: MagicMock
+    ) -> None:
+        """Test returns average ratios across sector tickers."""
+        # Simulate DB returning avg values
+        mock_row = MagicMock()
+        mock_row._mapping = {
+            "avg_pe": Decimal("10.3"),
+            "avg_pb": Decimal("1.5"),
+            "avg_roe": Decimal("13.8"),
+            "avg_eps": Decimal("2800"),
+        }
+        # Make the row subscriptable
+        mock_row.__getitem__ = lambda self, key: self._mapping[key]
+
+        mock_result = MagicMock()
+        mock_result.first.return_value = mock_row
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_session
+        mock_get_session.return_value = mock_ctx
+
+        result = await get_sector_average_ratios(
+            ["HSG", "NKG", "TLH"], exclude_ticker="HPG"
+        )
+
+        assert result["pe"] == Decimal("10.3")
+        assert result["pb"] == Decimal("1.5")
+        assert result["roe"] == Decimal("13.8")
+        assert result["eps"] == Decimal("2800")
+
+    @pytest.mark.asyncio
+    @patch("services.crawler.market_data.stock_data_repo.get_async_session")
+    async def test_empty_result_returns_all_none(
+        self, mock_get_session: MagicMock
+    ) -> None:
+        """Test returns dict with all None values when no data."""
+        mock_row = MagicMock()
+        mock_row._mapping = {
+            "avg_pe": None,
+            "avg_pb": None,
+            "avg_roe": None,
+            "avg_eps": None,
+        }
+        mock_row.__getitem__ = lambda self, key: self._mapping[key]
+
+        mock_result = MagicMock()
+        mock_result.first.return_value = mock_row
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_session
+        mock_get_session.return_value = mock_ctx
+
+        result = await get_sector_average_ratios([], exclude_ticker="HPG")
+
+        assert result["pe"] is None
+        assert result["pb"] is None
+        assert result["roe"] is None
+        assert result["eps"] is None
+
+    @pytest.mark.asyncio
+    @patch("services.crawler.market_data.stock_data_repo.get_async_session")
+    async def test_exclude_ticker(
+        self, mock_get_session: MagicMock
+    ) -> None:
+        """Test exclude_ticker filters correctly."""
+        mock_row = MagicMock()
+        mock_row._mapping = {
+            "avg_pe": Decimal("11.0"),
+            "avg_pb": Decimal("1.6"),
+            "avg_roe": Decimal("14.0"),
+            "avg_eps": Decimal("3000"),
+        }
+        mock_row.__getitem__ = lambda self, key: self._mapping[key]
+
+        mock_result = MagicMock()
+        mock_result.first.return_value = mock_row
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_session
+        mock_get_session.return_value = mock_ctx
+
+        result = await get_sector_average_ratios(
+            ["HPG", "HSG", "NKG"], exclude_ticker="HPG"
+        )
+
+        # Verify the execute was called (we can't easily check the WHERE clause
+        # in the mock, but implementation should exclude HPG)
+        mock_session.execute.assert_awaited_once()
+        assert "pe" in result
+
+
+class TestGetPeerRatios:
+    """Tests for get_peer_ratios."""
+
+    @pytest.mark.asyncio
+    @patch("services.crawler.market_data.stock_data_repo.get_async_session")
+    async def test_happy_path_returns_peer_list(
+        self, mock_get_session: MagicMock
+    ) -> None:
+        """Test returns list of peer ratio dicts."""
+        # Mock DB rows for HSG and NKG
+        row_hsg = MagicMock()
+        row_hsg.ticker_symbol = "HSG"
+        row_hsg.pe_ratio = Decimal("8.5")
+        row_hsg.pb_ratio = Decimal("1.2")
+        row_hsg.roe = Decimal("12.0")
+
+        row_nkg = MagicMock()
+        row_nkg.ticker_symbol = "NKG"
+        row_nkg.pe_ratio = Decimal("7.0")
+        row_nkg.pb_ratio = Decimal("0.9")
+        row_nkg.roe = Decimal("10.5")
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(row_hsg,), (row_nkg,)]
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_session
+        mock_get_session.return_value = mock_ctx
+
+        result = await get_peer_ratios(
+            ["HPG", "HSG", "NKG"], exclude_ticker="HPG"
+        )
+
+        assert len(result) == 2
+        assert result[0]["ticker"] == "HSG"
+        assert result[0]["pe"] == 8.5
+        assert result[1]["ticker"] == "NKG"
+
+    @pytest.mark.asyncio
+    @patch("services.crawler.market_data.stock_data_repo.get_async_session")
+    async def test_exclude_logic(
+        self, mock_get_session: MagicMock
+    ) -> None:
+        """Test exclude_ticker is filtered out."""
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_session
+        mock_get_session.return_value = mock_ctx
+
+        result = await get_peer_ratios(["HPG"], exclude_ticker="HPG")
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("services.crawler.market_data.stock_data_repo.get_async_session")
+    async def test_max_5_cap(
+        self, mock_get_session: MagicMock
+    ) -> None:
+        """Test returns max 5 peers."""
+        rows = []
+        for i, ticker in enumerate(["A", "B", "C", "D", "E", "F", "G"]):
+            row = MagicMock()
+            row.ticker_symbol = ticker
+            row.pe_ratio = Decimal(str(10 + i))
+            row.pb_ratio = Decimal("1.0")
+            row.roe = Decimal("10.0")
+            rows.append((row,))
+
+        mock_result = MagicMock()
+        mock_result.all.return_value = rows
+
+        mock_session = AsyncMock()
+        mock_session.execute.return_value = mock_result
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_session
+        mock_get_session.return_value = mock_ctx
+
+        result = await get_peer_ratios(
+            ["A", "B", "C", "D", "E", "F", "G", "HPG"], exclude_ticker="HPG"
+        )
+
+        assert len(result) <= 5

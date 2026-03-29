@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass, field
 from datetime import date
@@ -104,3 +105,58 @@ def load_ticker_config(
         enabled_groups=enabled_count,
         holidays=holidays,
     )
+
+
+SECTOR_DISPLAY_NAMES: dict[str, str] = {
+    "banking": "Ngân hàng",
+    "steel": "Thép",
+    "oil_gas": "Dầu khí",
+    "securities": "Chứng khoán",
+    "vn30": "VN30",
+}
+
+
+@functools.lru_cache(maxsize=4)
+def _load_raw_config(path: str) -> dict:
+    """Load and cache raw YAML config. Path as str for hashability."""
+    with open(path) as f:
+        return yaml.safe_load(f) or {}
+
+
+def get_sector_for_ticker(
+    ticker: str,
+    config_path: Path | None = None,
+) -> tuple[str, list[str]]:
+    """Find the sector group a ticker belongs to.
+
+    Searches non-vn30 groups first. Falls back to vn30 if ticker
+    is only found there. Returns ("Không xác định", [ticker]) if not found.
+
+    Returns:
+        Tuple of (Vietnamese sector display name, list of tickers in sector).
+    """
+    path = config_path or DEFAULT_CONFIG_PATH
+    if not path.exists():
+        return "Không xác định", [ticker]
+
+    raw = _load_raw_config(str(path))
+    groups = raw.get("groups", {})
+
+    # First pass: search non-vn30 enabled groups
+    vn30_tickers: list[str] | None = None
+    for group_name, group_data in groups.items():
+        if not group_data.get("enabled", False):
+            continue
+        group_tickers = [str(t).strip().upper() for t in group_data.get("tickers", [])]
+        if group_name == "vn30":
+            vn30_tickers = group_tickers
+            continue
+        if ticker.upper() in group_tickers:
+            display_name = SECTOR_DISPLAY_NAMES.get(group_name, group_name)
+            return display_name, group_tickers
+
+    # Second pass: check vn30
+    if vn30_tickers and ticker.upper() in vn30_tickers:
+        return "VN30", vn30_tickers
+
+    return "Không xác định", [ticker]
