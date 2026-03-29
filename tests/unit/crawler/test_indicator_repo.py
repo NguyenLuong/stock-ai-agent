@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from services.crawler.market_data.indicator_repo import (
+    get_latest_indicators,
     get_stock_prices_df,
     save_technical_indicators,
 )
@@ -170,6 +171,72 @@ class TestSaveTechnicalIndicators:
         # Verify commit was called (function didn't crash on naive datetime)
         mock_session.commit.assert_awaited_once()
 
+
+
+class TestGetLatestIndicators:
+    """Tests for get_latest_indicators function."""
+
+    @patch("services.crawler.market_data.indicator_repo.get_async_session")
+    async def test_returns_indicators_and_latest_date(self, mock_get_session) -> None:
+        """Happy path: returns dict of indicators and most recent data_as_of."""
+        dt1 = datetime(2026, 3, 28, 6, 0, tzinfo=timezone.utc)
+        dt2 = datetime(2026, 3, 27, 6, 0, tzinfo=timezone.utc)
+
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.all.return_value = [
+            ("RSI_14", Decimal("45.2"), dt1),
+            ("SMA_20", Decimal("28600"), dt2),
+            ("MACD_LINE", Decimal("1.23"), dt1),
+        ]
+        mock_session.execute.return_value = mock_result
+
+        mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_get_session.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        indicators, data_as_of = await get_latest_indicators("HPG")
+
+        assert indicators == {
+            "RSI_14": Decimal("45.2"),
+            "SMA_20": Decimal("28600"),
+            "MACD_LINE": Decimal("1.23"),
+        }
+        assert data_as_of == dt1  # Most recent
+
+    @patch("services.crawler.market_data.indicator_repo.get_async_session")
+    async def test_returns_empty_when_no_indicators(self, mock_get_session) -> None:
+        """Returns ({}, None) when no indicators exist for ticker."""
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        mock_session.execute.return_value = mock_result
+
+        mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_get_session.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        indicators, data_as_of = await get_latest_indicators("NONEXIST")
+
+        assert indicators == {}
+        assert data_as_of is None
+
+    @patch("services.crawler.market_data.indicator_repo.get_async_session")
+    async def test_tuple_unpacking(self, mock_get_session) -> None:
+        """Verify result supports tuple unpacking."""
+        dt = datetime(2026, 3, 28, tzinfo=timezone.utc)
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.all.return_value = [("RSI_14", Decimal("50.0"), dt)]
+        mock_session.execute.return_value = mock_result
+
+        mock_get_session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_get_session.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        result = await get_latest_indicators("HPG")
+        ind_dict, as_of = result  # Tuple unpacking
+
+        assert isinstance(ind_dict, dict)
+        assert isinstance(as_of, datetime)
+        assert ind_dict["RSI_14"] == Decimal("50.0")
 
 
 class TestGetStockPricesDf:

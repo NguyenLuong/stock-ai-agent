@@ -35,3 +35,42 @@ class MarketContextState(TypedDict, total=False):
 
     failed_agents: list[str]
     error: str
+
+
+class TechnicalAnalysisState(TypedDict, total=False):
+    """State for the Technical Analysis Agent LangGraph node.
+
+    Input fields are set by the orchestrator; processing and output fields
+    are populated by the agent node itself.
+    """
+
+    # --- Input fields (set by orchestrator) ---
+    ticker: str
+    analysis_type: str  # "morning_briefing" | "alert" | "deep_analysis"
+    analysis_date: str  # ISO date string, e.g. "2026-03-28"
+
+    # --- Processing fields (intermediate data) ---
+    indicator_values: dict
+    ohlcv_data: list[dict]
+
+    # --- Output fields ---
+    technical_analysis: dict | None
+    # technical_analysis structure:
+    # {
+    #     "indicator_summary": str | None,     # Phase 1 output — LLM interpretation
+    #     "pattern_summary": str | None,       # Phase 2 output — LLM pattern recognition
+    #     "signals": {
+    #         "trend": str,                    # "uptrend" | "downtrend" | "sideways"
+    #         "momentum": str,                 # "bullish" | "bearish" | "neutral"
+    #         "volatility": str,               # "high" | "low" | "normal"
+    #         "volume_confirmation": bool,
+    #     },
+    #     "support_levels": list[float],
+    #     "resistance_levels": list[float],
+    #     "confidence": float,
+    #     "data_as_of": str,                   # ISO timestamp
+    #     "data_source": str,                  # "calculated" | "mock"
+    # }
+
+    failed_agents: list[str]
+    error: str
