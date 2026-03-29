@@ -174,6 +174,156 @@ async def save_financial_ratios(
     return inserted
 
 
+async def get_sector_average_ratios(
+    tickers: list[str],
+    exclude_ticker: str = "",
+) -> dict[str, Decimal | None]:
+    """Compute average financial ratios across sector tickers.
+
+    For each ticker, takes the most recent financial_ratio record,
+    then averages across tickers.
+
+    Args:
+        tickers: List of sector tickers.
+        exclude_ticker: Ticker to exclude from averaging.
+
+    Returns:
+        Dict with keys: pe, pb, roe, eps. Values are None when no data.
+    """
+    filtered = [t for t in tickers if t != exclude_ticker]
+    if not filtered:
+        return {"pe": None, "pb": None, "roe": None, "eps": None}
+
+    # Subquery: latest data_as_of per ticker
+    latest_sub = (
+        select(
+            MarketData.ticker_symbol,
+            func.max(MarketData.data_as_of).label("max_as_of"),
+        )
+        .where(
+            MarketData.ticker_symbol.in_(filtered),
+            MarketData.data_type == "financial_ratio",
+        )
+        .group_by(MarketData.ticker_symbol)
+        .subquery()
+    )
+
+    async with get_async_session() as session:
+        result = await session.execute(
+            select(
+                func.avg(MarketData.pe_ratio).label("avg_pe"),
+                func.avg(MarketData.pb_ratio).label("avg_pb"),
+                func.avg(MarketData.roe).label("avg_roe"),
+                func.avg(MarketData.eps).label("avg_eps"),
+            )
+            .join(
+                latest_sub,
+                (MarketData.ticker_symbol == latest_sub.c.ticker_symbol)
+                & (MarketData.data_as_of == latest_sub.c.max_as_of),
+            )
+            .where(MarketData.data_type == "financial_ratio")
+        )
+        row = result.first()
+
+    if row is None:
+        return {"pe": None, "pb": None, "roe": None, "eps": None}
+
+    mapping = row._mapping
+    return {
+        "pe": mapping["avg_pe"],
+        "pb": mapping["avg_pb"],
+        "roe": mapping["avg_roe"],
+        "eps": mapping["avg_eps"],
+    }
+
+
+async def get_peer_ratios(
+    tickers: list[str],
+    exclude_ticker: str = "",
+) -> list[dict]:
+    """Fetch latest financial ratios for each peer ticker.
+
+    Returns list of dicts sorted by ticker, max 5 peers.
+    Each dict: {"ticker": str, "pe": float|None, "pb": float|None, "roe": float|None}
+    """
+    filtered = [t for t in tickers if t != exclude_ticker]
+    if not filtered:
+        return []
+
+    # Subquery: latest data_as_of per ticker
+    latest_sub = (
+        select(
+            MarketData.ticker_symbol,
+            func.max(MarketData.data_as_of).label("max_as_of"),
+        )
+        .where(
+            MarketData.ticker_symbol.in_(filtered),
+            MarketData.data_type == "financial_ratio",
+        )
+        .group_by(MarketData.ticker_symbol)
+        .subquery()
+    )
+
+    async with get_async_session() as session:
+        result = await session.execute(
+            select(MarketData)
+            .join(
+                latest_sub,
+                (MarketData.ticker_symbol == latest_sub.c.ticker_symbol)
+                & (MarketData.data_as_of == latest_sub.c.max_as_of),
+            )
+            .where(MarketData.data_type == "financial_ratio")
+            .order_by(MarketData.ticker_symbol)
+        )
+        rows = result.all()
+
+    peers: list[dict] = []
+    for row in rows:
+        record = row[0] if isinstance(row, tuple) else row
+        peers.append({
+            "ticker": record.ticker_symbol,
+            "pe": float(record.pe_ratio) if record.pe_ratio is not None else None,
+            "pb": float(record.pb_ratio) if record.pb_ratio is not None else None,
+            "roe": float(record.roe) if record.roe is not None else None,
+        })
+
+    return peers[:5]
+
+
+async def get_latest_financial_ratios(
+    ticker: str,
+) -> tuple[dict[str, Decimal | None], datetime | None]:
+    """Fetch the most recent financial_ratio record for a ticker.
+
+    Returns:
+        Tuple of (ratio_dict, data_as_of).
+        Empty dict and None when no data exists.
+    """
+    async with get_async_session() as session:
+        result = await session.execute(
+            select(MarketData)
+            .where(
+                MarketData.ticker_symbol == ticker,
+                MarketData.data_type == "financial_ratio",
+            )
+            .order_by(MarketData.data_as_of.desc())
+            .limit(1)
+        )
+        row = result.first()
+
+    if row is None:
+        return {}, None
+
+    # SQLAlchemy Row → actual ORM object
+    record = row[0] if isinstance(row, tuple) else row
+    ratios: dict[str, Decimal | None] = {
+        field: getattr(record, field, None)
+        for field in ("pe_ratio", "pb_ratio", "roe", "eps", "eps_growth_yoy")
+    }
+
+    return ratios, record.data_as_of
+
+
 def _extract_ratios_from_df(
     df: pd.DataFrame,
 ) -> dict[str, dict[str, Decimal | None]]:
