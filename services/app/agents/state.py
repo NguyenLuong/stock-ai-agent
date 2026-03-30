@@ -121,3 +121,30 @@ class FundamentalAnalysisState(TypedDict, total=False):
 
     failed_agents: list[str]
     error: str
+
+
+class OrchestratorState(TypedDict, total=False):
+    """State for the Orchestrator LangGraph graph.
+
+    Superset of input fields needed by all 3 analysis agents plus
+    orchestrator-specific tracking and output fields.
+    """
+
+    # --- Input fields (set by caller / endpoint) ---
+    ticker: str
+    analysis_type: str  # "morning_briefing" | "alert" | "deep_analysis"
+    analysis_date: str  # ISO date string, e.g. "2026-03-29"
+    watchlist: list[str]  # Danh mục theo dõi, used in synthesis prompt
+
+    # --- Agent output fields (populated by dispatch_and_collect) ---
+    market_summary: dict | None
+    technical_analysis: dict | None
+    fundamental_analysis: dict | None
+
+    # --- Tracking fields ---
+    failed_agents: list[str]
+
+    # --- Orchestrator output fields ---
+    synthesis_result: dict | None
+    confidence_score: float | None
+    error: str | None
