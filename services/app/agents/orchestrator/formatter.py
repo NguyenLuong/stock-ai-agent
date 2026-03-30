@@ -8,6 +8,13 @@ from services.app.agents.orchestrator.confidence import (
     calculate_confidence,
     confidence_display,
 )
+from services.app.agents.orchestrator.integrity_guard import (
+    audit_null_fields,
+    check_data_traceability,
+    compute_risk_assessment,
+    compute_stop_loss,
+    validate_no_absolute_certainty,
+)
 from services.app.agents.state import OrchestratorState
 from shared.llm.client import LLMCallError, LLMClient
 from shared.llm.config_loader import get_config_loader
@@ -346,7 +353,7 @@ async def synthesize_node(state: OrchestratorState) -> dict:
             age_hours = (now - ts).total_seconds() / 3600
             if age_hours > 4:
                 stale_warnings.append(
-                    f"⚠️ Dữ liệu {ds['agent']} cập nhật lần cuối {dao}"
+                    f"⚠️ Dữ liệu {ds['agent']} có thể đã cũ (cập nhật lần cuối: {dao})"
                 )
         except (ValueError, TypeError):
             pass
@@ -362,6 +369,39 @@ async def synthesize_node(state: OrchestratorState) -> dict:
         display = agent_display.get(agent_name, agent_name)
         unavailable_warnings.append(f"⚠️ {display} không khả dụng")
 
+    # --- Integrity guard checks ---
+    integrity_violations = validate_no_absolute_certainty(synthesis_text)
+    if integrity_violations:
+        logger.warning(
+            "synthesis_absolute_certainty_detected",
+            component="orchestrator",
+            violations=integrity_violations,
+        )
+        # AC #4: no absolute-certainty language should be present — prepend visible warning
+        synthesis_text = (
+            "⚠️ Cảnh báo: Phân tích bên dưới có chứa ngôn ngữ tuyệt đối "
+            "không phù hợp với tiêu chuẩn khuyến nghị. Hãy đọc với sự thận trọng.\n\n"
+        ) + synthesis_text
+
+    risk_assessment = compute_risk_assessment(state, confidence)
+    logger.info(
+        "risk_assessment_computed",
+        component="orchestrator",
+        ticker=ticker,
+        level=risk_assessment["level"],
+        confidence=confidence,
+    )
+    stop_loss_suggestion = compute_stop_loss(state)
+    traceability_warnings = check_data_traceability(data_sources)
+
+    null_fields = audit_null_fields(state)
+    if null_fields and "Không xác nhận được" not in synthesis_text:
+        logger.warning(
+            "synthesis_missing_unconfirmed_notation",
+            component="orchestrator",
+            null_fields=null_fields,
+        )
+
     synthesis_result = {
         "synthesis": synthesis_text,
         "conflict_resolution": conflict_resolution_text,
@@ -372,6 +412,12 @@ async def synthesize_node(state: OrchestratorState) -> dict:
         "confidence_display": confidence_display(confidence),
         "disclaimer": _DISCLAIMER,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        # Integrity guard fields
+        "risk_assessment": risk_assessment,
+        "stop_loss_suggestion": stop_loss_suggestion,
+        "integrity_violations": integrity_violations,
+        "traceability_warnings": traceability_warnings,
+        "null_fields": null_fields,
     }
 
     logger.info(
