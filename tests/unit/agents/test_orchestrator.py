@@ -101,7 +101,7 @@ def _full_state(**overrides) -> dict:
 _PATCH_MARKET = "services.app.agents.market_context.node.market_context_node"
 _PATCH_TECHNICAL = "services.app.agents.technical_analysis.node.technical_analysis_node"
 _PATCH_FUNDAMENTAL = "services.app.agents.fundamental_analysis.node.fundamental_analysis_node"
-_PATCH_LLM_CLIENT = "services.app.agents.orchestrator.formatter.LLMClient"
+_PATCH_LLM_CLIENT = "services.app.agents.orchestrator.formatter._get_llm_client"
 _PATCH_LOAD_PROMPT = "services.app.agents.orchestrator.formatter.load_prompt"
 _PATCH_CONFIG = "services.app.agents.orchestrator.formatter.get_config_loader"
 
@@ -277,6 +277,56 @@ class TestConflictDetection:
         )
         conflicts = detect_conflicts(state)
         assert len(conflicts) == 0
+
+
+# ===========================================================================
+# Unit Tests: Staleness warnings
+# ===========================================================================
+
+
+class TestStalenessWarnings:
+    """Test staleness warning generation for stale agent data."""
+
+    @patch(_PATCH_CONFIG)
+    @patch(_PATCH_LOAD_PROMPT)
+    @patch(_PATCH_LLM_CLIENT)
+    async def test_stale_data_produces_warnings(self, mock_llm_cls, mock_load, mock_config):
+        from services.app.agents.orchestrator.formatter import synthesize_node
+
+        _setup_config_mock(mock_config)
+        _setup_prompt_mock(mock_load)
+        llm = AsyncMock()
+        llm.call.return_value = "KHUYẾN NGHỊ: THEO DÕI"
+        mock_llm_cls.return_value = llm
+
+        state = _full_state(
+            market_summary=_market_summary(data_as_of=_old_iso(6)),
+            technical_analysis=_technical_analysis(data_as_of=_old_iso(8)),
+        )
+        result = await synthesize_node(state)
+
+        warnings = result["synthesis_result"]["stale_warnings"]
+        assert len(warnings) >= 2
+        assert any("market_context" in w for w in warnings)
+        assert any("technical_analysis" in w for w in warnings)
+
+    @patch(_PATCH_CONFIG)
+    @patch(_PATCH_LOAD_PROMPT)
+    @patch(_PATCH_LLM_CLIENT)
+    async def test_fresh_data_no_warnings(self, mock_llm_cls, mock_load, mock_config):
+        from services.app.agents.orchestrator.formatter import synthesize_node
+
+        _setup_config_mock(mock_config)
+        _setup_prompt_mock(mock_load)
+        llm = AsyncMock()
+        llm.call.return_value = "KHUYẾN NGHỊ: MUA"
+        mock_llm_cls.return_value = llm
+
+        state = _full_state()  # All data_as_of is _now_iso() → fresh
+        result = await synthesize_node(state)
+
+        warnings = result["synthesis_result"]["stale_warnings"]
+        assert len(warnings) == 0
 
 
 # ===========================================================================

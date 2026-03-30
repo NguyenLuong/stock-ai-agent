@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -21,6 +22,17 @@ class AnalyzeStockRequest(BaseModel):
     watchlist: list[str] = []
 
 
+def _build_response(status: str, duration: float, data: dict | None = None, error: str | None = None) -> dict:
+    """Build response matching architecture standard: {data, status, timestamp}."""
+    return {
+        "data": data or {},
+        "status": status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "duration_seconds": duration,
+        "error": error,
+    }
+
+
 @router.post("/analyze-stock")
 async def analyze_stock(req: AnalyzeStockRequest) -> dict:
     """Run the full orchestrator graph for a given ticker.
@@ -28,8 +40,6 @@ async def analyze_stock(req: AnalyzeStockRequest) -> dict:
     Returns structured JSON with status, duration, and analysis result.
     Timeout: 120 seconds (AC #1 requirement).
     """
-    from datetime import date, timezone
-
     from services.app.agents.graph import orchestrator_graph
 
     start = time.monotonic()
@@ -37,7 +47,7 @@ async def analyze_stock(req: AnalyzeStockRequest) -> dict:
     initial_state = {
         "ticker": req.ticker,
         "analysis_type": req.analysis_type,
-        "analysis_date": date.today().isoformat(),
+        "analysis_date": datetime.now(timezone.utc).date().isoformat(),
         "watchlist": req.watchlist or [req.ticker],
     }
 
@@ -54,11 +64,7 @@ async def analyze_stock(req: AnalyzeStockRequest) -> dict:
             ticker=req.ticker,
             duration_seconds=duration,
         )
-        return {
-            "status": "failed",
-            "duration_seconds": duration,
-            "error": "Analysis timed out (>120s)",
-        }
+        return _build_response("failed", duration, error="Analysis timed out (>120s)")
     except Exception as exc:
         duration = round(time.monotonic() - start, 2)
         logger.error(
@@ -67,11 +73,7 @@ async def analyze_stock(req: AnalyzeStockRequest) -> dict:
             ticker=req.ticker,
             error=str(exc),
         )
-        return {
-            "status": "failed",
-            "duration_seconds": duration,
-            "error": str(exc),
-        }
+        return _build_response("failed", duration, error=str(exc))
 
     duration = round(time.monotonic() - start, 2)
     failed = result.get("failed_agents", [])
@@ -92,13 +94,10 @@ async def analyze_stock(req: AnalyzeStockRequest) -> dict:
         duration_seconds=duration,
     )
 
-    return {
-        "status": status,
-        "duration_seconds": duration,
-        "result": {
-            "synthesis": result.get("synthesis_result"),
-            "confidence_score": result.get("confidence_score"),
-            "failed_agents": failed,
-            "error": error,
-        },
+    data = {
+        "synthesis": result.get("synthesis_result"),
+        "confidence_score": result.get("confidence_score"),
+        "failed_agents": failed,
     }
+
+    return _build_response(status, duration, data=data, error=error)

@@ -18,6 +18,16 @@ logger = get_logger("orchestrator")
 
 _DISCLAIMER = "Đây là tham khảo từ AI, không phải khuyến nghị mua/bán chính thức"
 
+# Module-level singleton — avoids re-instantiation per call
+_llm_client: LLMClient | None = None
+
+
+def _get_llm_client() -> LLMClient:
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = LLMClient()
+    return _llm_client
+
 
 # ---------------------------------------------------------------------------
 # Agent output → prompt string formatters
@@ -246,7 +256,7 @@ async def synthesize_node(state: OrchestratorState) -> dict:
     confidence = calculate_confidence(state)
 
     config = get_config_loader()
-    llm = LLMClient()
+    llm = _get_llm_client()
 
     # --- Main synthesis ---
     try:

@@ -5,19 +5,18 @@ from __future__ import annotations
 import asyncio
 import time
 
-from services.app.agents import market_context as _mc_mod
-from services.app.agents import technical_analysis as _ta_mod
-from services.app.agents import fundamental_analysis as _fa_mod
+from importlib import import_module
+
 from services.app.agents.state import OrchestratorState
 from shared.logging import get_logger
 
 logger = get_logger("orchestrator")
 
-# (name, module, function_name) — resolved at call time so patches work
-_AGENT_SPECS: list[tuple[str, object, str]] = [
-    ("market_context", _mc_mod, "market_context_node"),
-    ("technical_analysis", _ta_mod, "technical_analysis_node"),
-    ("fundamental_analysis", _fa_mod, "fundamental_analysis_node"),
+# (name, module_path, function_name) — resolved at call time so patches work
+_AGENT_SPECS: list[tuple[str, str, str]] = [
+    ("market_context", "services.app.agents.market_context.node", "market_context_node"),
+    ("technical_analysis", "services.app.agents.technical_analysis.node", "technical_analysis_node"),
+    ("fundamental_analysis", "services.app.agents.fundamental_analysis.node", "fundamental_analysis_node"),
 ]
 
 
@@ -38,8 +37,8 @@ async def dispatch_and_collect(state: OrchestratorState) -> dict:
 
     # Resolve functions at call time (enables mocking)
     agent_funcs = [
-        (name, getattr(mod.node, fn_name))
-        for name, mod, fn_name in _AGENT_SPECS
+        (name, getattr(import_module(mod_path), fn_name))
+        for name, mod_path, fn_name in _AGENT_SPECS
     ]
 
     results = await asyncio.gather(

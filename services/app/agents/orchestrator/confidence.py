@@ -236,19 +236,30 @@ def _redistribute_weights(failed: set[str]) -> dict[str, float]:
         "fundamental_health": _W_FUNDAMENTAL_HEALTH,
     }
 
-    if "technical_analysis" in failed and "fundamental_analysis" not in failed:
-        # Redistribute signal_strength weight
+    ta_failed = "technical_analysis" in failed
+    fa_failed = "fundamental_analysis" in failed
+    mc_failed = "market_context" in failed
+
+    if ta_failed and not fa_failed:
         weights["fundamental_health"] += weights["signal_strength"]
         weights["signal_strength"] = 0.0
-    elif "fundamental_analysis" in failed and "technical_analysis" not in failed:
+    elif fa_failed and not ta_failed:
         weights["signal_strength"] += weights["fundamental_health"]
         weights["fundamental_health"] = 0.0
-    elif "technical_analysis" in failed and "fundamental_analysis" in failed:
+    elif ta_failed and fa_failed:
         extra = weights["signal_strength"] + weights["fundamental_health"]
         weights["signal_strength"] = 0.0
         weights["fundamental_health"] = 0.0
         weights["completeness"] += extra / 3
         weights["agreement"] += extra / 3
         weights["freshness"] += extra / 3
+
+    # When market_context fails, freshness loses its main data source —
+    # redistribute its weight to completeness and agreement equally.
+    if mc_failed and not ta_failed and not fa_failed:
+        extra = weights["freshness"] * 0.5
+        weights["freshness"] -= extra
+        weights["completeness"] += extra / 2
+        weights["agreement"] += extra / 2
 
     return weights
