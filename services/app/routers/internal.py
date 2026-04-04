@@ -9,9 +9,10 @@ from __future__ import annotations
 import time
 from dataclasses import asdict
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 
 from shared.logging import get_logger
+from shared.utils.datetime_utils import now_utc, to_vn_display
 
 logger = get_logger("internal_trigger")
 
@@ -241,3 +242,21 @@ async def trigger_lifecycle(
             "duration_seconds": duration,
             "error": str(exc),
         }
+
+
+@router.post("/test-telegram")
+async def trigger_test_telegram(request: Request) -> dict:
+    """Send a test Telegram message to verify bot connectivity."""
+    telegram_bot = getattr(request.app.state, "telegram_bot", None)
+    if telegram_bot is None:
+        return {"status": "failed", "error": "Telegram bot not initialized"}
+
+    test_msg = (
+        f"🤖 Stock AI Agent — Telegram Bot hoạt động bình thường. "
+        f"[{to_vn_display(now_utc())}]"
+    )
+    message_ids = await telegram_bot.sender.send_message(test_msg)
+    if message_ids:
+        return {"status": "ok", "message_sent": True}
+    logger.error("test_telegram_failed", component="internal_trigger", reason="message queued, not delivered")
+    return {"status": "failed", "error": "Message failed to deliver (queued for retry)"}
