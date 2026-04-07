@@ -5,6 +5,7 @@
 groups:
   vn30:
     enabled: true
+    sector: "diversified"
     description: "VN30 Index components"
     tickers:
       - VNM
@@ -40,6 +41,7 @@ groups:
 
   securities:
     enabled: true
+    sector: "securities"
     description: "Cong ty chung khoan"
     tickers:
       - SSI
@@ -50,6 +52,7 @@ groups:
 
   oil_gas:
     enabled: true
+    sector: "oil_gas"
     description: "Dau khi"
     tickers:
       - GAS
@@ -60,6 +63,7 @@ groups:
 
   banking:
     enabled: true
+    sector: "banking"
     description: "Ngan hang"
     tickers:
       - VCB
@@ -75,6 +79,7 @@ groups:
 
   steel:
     enabled: true
+    sector: "steel"
     description: "Thep"
     tickers:
       - HPG
