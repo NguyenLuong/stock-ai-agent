@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from api.router import router
+from services.app.api.router import router
 from shared.logging import get_logger
 
 logger = get_logger("app")

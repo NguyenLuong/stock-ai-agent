@@ -54,9 +54,9 @@ class TestBuildDeployments:
         """Schedules not in SCHEDULE_TO_FLOW are skipped."""
         unknown = [
             ScheduleEntry(
-                name="morning_briefing",
+                name="unknown_future_flow",
                 cron="0 7 * * 1-5",
-                description="Epic 4 scope",
+                description="Future scope",
                 enabled=True,
             ),
         ]

@@ -24,6 +24,12 @@ RUN uv pip install --system \
     "defusedxml>=0.7" \
     "pandas-ta>=0.3.14b"
 COPY services/app .
-ENV PYTHONPATH="/crawler:${PYTHONPATH}"
+# Create namespace so "from services.app.*" and "from services.crawler.*" resolve.
+# /pylib/services/ acts as the 'services' package; symlinks point to real dirs.
+RUN mkdir -p /pylib/services \
+    && touch /pylib/services/__init__.py \
+    && ln -s /app /pylib/services/app \
+    && ln -s /crawler /pylib/services/crawler
+ENV PYTHONPATH="/pylib:/crawler:${PYTHONPATH}"
 EXPOSE 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
