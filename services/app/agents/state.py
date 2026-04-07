@@ -123,6 +123,40 @@ class FundamentalAnalysisState(TypedDict, total=False):
     error: str
 
 
+class MorningBriefingState(TypedDict, total=False):
+    """State for the Morning Briefing Intelligence Graph.
+
+    Sequential pipeline: market context → sector filter → technical batch
+    → fundamental batch → synthesis.
+    """
+
+    # --- Input fields (set by endpoint) ---
+    analysis_date: str
+    watchlist: list[str]
+
+    # --- Step 1: Market Context output ---
+    market_summary: dict | None  # reuse MarketContextState output structure
+    affected_sectors: list[str]  # extracted sector keys matching stock_tickers.yaml
+    market_sentiment: str  # "bullish" | "bearish" | "neutral"
+    key_events: list[str]
+
+    # --- Step 2: Sector Filter output ---
+    filtered_tickers: list[str]
+
+    # --- Step 3: Technical Batch output ---
+    technical_results: list[dict]  # [{ticker, technical_analysis, failed}]
+    notable_tickers: list[str]
+
+    # --- Step 4: Fundamental Batch output ---
+    fundamental_results: list[dict]  # [{ticker, fundamental_analysis, failed}]
+
+    # --- Step 5: Synthesis output ---
+    market_result: dict | None
+
+    # --- Tracking ---
+    failed_steps: list[str]
+
+
 class OrchestratorState(TypedDict, total=False):
     """State for the Orchestrator LangGraph graph.
 

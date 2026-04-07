@@ -1,4 +1,4 @@
-"""Tests for briefing_formatter — synthesis_result → Telegram message."""
+"""Tests for briefing_formatter — market_result → Telegram message."""
 
 from __future__ import annotations
 
@@ -7,108 +7,114 @@ from unittest.mock import patch
 
 from services.app.telegram.formatters.briefing_formatter import (
     format_morning_briefing,
-    _parse_confidence_value,
-    _confidence_emoji,
-    _parse_recommendation,
+    _signal_emoji,
+    _sentiment_emoji,
+    _escape_md,
 )
-
-SAMPLE_TICKER = "HPG"
 
 
 @pytest.fixture
-def sample_synthesis_result():
+def sample_market_result():
     return {
-        "synthesis": "HPG đang trong xu hướng tăng. Khuyến nghị mua với độ tin cậy cao. P/E: 8.5 [source: vnstock, 2026-03-30T06:00:00Z]",
-        "conflict_resolution": "",
-        "conflicts": [],
-        "data_sources": [{"agent": "technical_analysis", "source": "vnstock", "data_as_of": "2026-03-30T06:00:00Z"}],
+        "market_sentiment": "bullish",
+        "affected_sectors": ["banking", "steel"],
+        "key_events": ["Ngân hàng trung ương giữ lãi suất ổn định"],
+        "top_picks": [
+            {
+                "ticker": "HPG",
+                "signal": "uptrend",
+                "confidence": 0.85,
+                "summary": "Strong uptrend with high volume",
+            },
+            {
+                "ticker": "VCB",
+                "signal": "sideways",
+                "confidence": 0.6,
+                "summary": "Sideways movement",
+            },
+        ],
+        "market_summary": "Thị trường tích cực với ngành thép dẫn đầu",
         "stale_warnings": [],
         "unavailable_warnings": [],
-        "confidence_display": "🟢 Cao (75%)",
-        "disclaimer": "Đây là tham khảo từ AI, không phải khuyến nghị mua/bán chính thức",
-        "generated_at": "2026-03-30T06:30:00Z",
-        "risk_assessment": {
-            "level": "low",
-            "reasoning": "độ tin cậy tốt (75%), không có dấu hiệu rủi ro cao",
-            "confidence_score": 0.75,
-            "failed_agents": [],
-        },
-        "stop_loss_suggestion": 28000.0,
-        "integrity_violations": [],
-        "traceability_warnings": [],
-        "null_fields": [],
+        "disclaimer": "Thông tin chỉ mang tính chất tham khảo, không phải khuyến nghị đầu tư.",
+        "generated_at": "2026-04-01T06:30:00Z",
     }
 
 
 class TestFormatMorningBriefing:
-    def test_contains_ticker(self, sample_synthesis_result):
-        result = format_morning_briefing(sample_synthesis_result, ticker=SAMPLE_TICKER)
+    def test_contains_morning_briefing_header(self, sample_market_result):
+        result = format_morning_briefing(sample_market_result)
+        assert "MORNING BRIEFING" in result
+
+    def test_contains_sentiment(self, sample_market_result):
+        result = format_morning_briefing(sample_market_result)
+        assert "BULLISH" in result
+
+    def test_contains_sectors(self, sample_market_result):
+        result = format_morning_briefing(sample_market_result)
+        assert "banking" in result
+        assert "steel" in result
+
+    def test_contains_top_picks(self, sample_market_result):
+        result = format_morning_briefing(sample_market_result)
         assert "HPG" in result
+        assert "VCB" in result
+        assert "TOP PICKS" in result
 
-    def test_confidence_high_green_emoji(self, sample_synthesis_result):
-        """confidence >=0.70 → 🟢 appears exactly once in confidence line (no duplicate)."""
-        sample_synthesis_result["confidence_display"] = "🟢 Cao (75%)"
-        result = format_morning_briefing(sample_synthesis_result, ticker=SAMPLE_TICKER)
-        assert "🟢" in result
-        # Verify no duplicate emoji: "🟢 Độ tin cậy: 🟢 Cao (75%)" would be wrong
-        assert "Độ tin cậy: 🟢 Cao (75%)" in result
+    def test_contains_summary(self, sample_market_result):
+        result = format_morning_briefing(sample_market_result)
+        assert "Thị trường tích cực" in result
 
-    def test_confidence_medium_yellow_emoji(self, sample_synthesis_result):
-        """confidence 0.40-0.69 → 🟡 (from confidence_display, not prepended)."""
-        sample_synthesis_result["confidence_display"] = "🟡 Trung bình (55%)"
-        result = format_morning_briefing(sample_synthesis_result, ticker=SAMPLE_TICKER)
-        assert "Độ tin cậy: 🟡 Trung bình (55%)" in result
+    def test_contains_key_events(self, sample_market_result):
+        result = format_morning_briefing(sample_market_result)
+        assert "lãi suất ổn định" in result
 
-    def test_confidence_low_red_emoji(self, sample_synthesis_result):
-        """confidence <0.40 → 🔴 (from confidence_display, not prepended)."""
-        sample_synthesis_result["confidence_display"] = "🔴 Thấp (25%)"
-        result = format_morning_briefing(sample_synthesis_result, ticker=SAMPLE_TICKER)
-        assert "Độ tin cậy: 🔴 Thấp (25%)" in result
+    def test_stale_warnings_appear(self, sample_market_result):
+        sample_market_result["stale_warnings"] = ["Dữ liệu đã cũ hơn 4 giờ"]
+        result = format_morning_briefing(sample_market_result)
+        assert "Dữ liệu đã cũ hơn 4 giờ" in result
 
-    def test_stale_warnings_appear(self, sample_synthesis_result):
-        sample_synthesis_result["stale_warnings"] = ["Dữ liệu technical_analysis đã cũ hơn 4 giờ"]
-        result = format_morning_briefing(sample_synthesis_result, ticker=SAMPLE_TICKER)
-        assert "Dữ liệu technical_analysis đã cũ hơn 4 giờ" in result
+    def test_unavailable_warnings_appear(self, sample_market_result):
+        sample_market_result["unavailable_warnings"] = ["Technical analysis unavailable: VNM"]
+        result = format_morning_briefing(sample_market_result)
+        assert "Technical analysis unavailable: VNM" in result
 
-    def test_stop_loss_present(self, sample_synthesis_result):
-        """stop_loss_suggestion = 28000.0 → "Stop-loss" in output."""
-        sample_synthesis_result["stop_loss_suggestion"] = 28000.0
-        result = format_morning_briefing(sample_synthesis_result, ticker=SAMPLE_TICKER)
-        assert "Stop-loss" in result
+    def test_no_top_picks_shows_calm_message(self, sample_market_result):
+        sample_market_result["top_picks"] = []
+        result = format_morning_briefing(sample_market_result)
+        assert "không có tín hiệu nổi bật" in result.lower()
 
-    def test_stop_loss_none_absent(self, sample_synthesis_result):
-        """stop_loss_suggestion = None → "Stop-loss" NOT in output."""
-        sample_synthesis_result["stop_loss_suggestion"] = None
-        result = format_morning_briefing(sample_synthesis_result, ticker=SAMPLE_TICKER)
-        assert "Stop-loss" not in result
+    def test_contains_disclaimer(self, sample_market_result):
+        result = format_morning_briefing(sample_market_result)
+        assert "tham khảo" in result
 
-    def test_integrity_violations_in_alerts(self, sample_synthesis_result):
-        sample_synthesis_result["integrity_violations"] = ["Phát hiện xung đột dữ liệu giữa các agent"]
-        result = format_morning_briefing(sample_synthesis_result, ticker=SAMPLE_TICKER)
-        assert "Phát hiện xung đột dữ liệu giữa các agent" in result
+    def test_empty_sectors(self, sample_market_result):
+        sample_market_result["affected_sectors"] = []
+        result = format_morning_briefing(sample_market_result)
+        assert "MORNING BRIEFING" in result
 
 
 class TestHelperFunctions:
-    def test_parse_confidence_75(self):
-        assert _parse_confidence_value("🟢 Cao (75%)") == 0.75
+    def test_signal_emoji_uptrend(self):
+        assert _signal_emoji("uptrend") == "🟢"
 
-    def test_parse_confidence_no_match(self):
-        assert _parse_confidence_value("unknown") == 0.5
+    def test_signal_emoji_downtrend(self):
+        assert _signal_emoji("downtrend") == "🔴"
 
-    def test_confidence_emoji_high(self):
-        assert _confidence_emoji(0.75) == "🟢"
+    def test_signal_emoji_sideways(self):
+        assert _signal_emoji("sideways") == "🟡"
 
-    def test_confidence_emoji_medium(self):
-        assert _confidence_emoji(0.55) == "🟡"
+    def test_sentiment_emoji_bullish(self):
+        assert _sentiment_emoji("bullish") == "📈"
 
-    def test_confidence_emoji_low(self):
-        assert _confidence_emoji(0.30) == "🔴"
+    def test_sentiment_emoji_bearish(self):
+        assert _sentiment_emoji("bearish") == "📉"
 
-    def test_parse_recommendation_mua(self):
-        assert _parse_recommendation("khuyến nghị mua HPG") == "MUA"
+    def test_sentiment_emoji_neutral(self):
+        assert _sentiment_emoji("neutral") == "➡️"
 
-    def test_parse_recommendation_ban(self):
-        assert _parse_recommendation("nên bán cổ phiếu") == "BÁN"
+    def test_escape_md_special_chars(self):
+        assert _escape_md("hello *world* _foo_ `bar`") == r"hello \*world\* \_foo\_ \`bar\`"
 
-    def test_parse_recommendation_default(self):
-        assert _parse_recommendation("no keywords here") == "THEO DÕI"
+    def test_escape_md_no_special(self):
+        assert _escape_md("plain text") == "plain text"
