@@ -156,9 +156,33 @@ class TestMorningBriefingNonTradingDay:
 
     @patch(f"{_P}.now_utc")
     @patch(f"{_P}._load_variable_holidays", return_value=[])
+    def test_vn_holiday_new_year_skipped(self, _mock_holidays, mock_now):
+        """January 1 (New Year) → skipped."""
+        mock_now.return_value = _mock_now_utc(2026, 1, 1, 23, 0)  # Thursday
+        response = client.post("/internal/trigger/morning-briefing", headers=TRIGGER_HEADER)
+        assert response.json()["status"] == "skipped"
+
+    @patch(f"{_P}.now_utc")
+    @patch(f"{_P}._load_variable_holidays", return_value=[])
     def test_vn_holiday_apr30_skipped(self, _mock_holidays, mock_now):
         """April 30 (VN Liberation Day) → skipped."""
         mock_now.return_value = _mock_now_utc(2026, 4, 30, 23, 0)  # Thursday
+        response = client.post("/internal/trigger/morning-briefing", headers=TRIGGER_HEADER)
+        assert response.json()["status"] == "skipped"
+
+    @patch(f"{_P}.now_utc")
+    @patch(f"{_P}._load_variable_holidays", return_value=[])
+    def test_vn_holiday_may1_skipped(self, _mock_holidays, mock_now):
+        """May 1 (International Labour Day) → skipped."""
+        mock_now.return_value = _mock_now_utc(2026, 5, 1, 23, 0)  # Friday
+        response = client.post("/internal/trigger/morning-briefing", headers=TRIGGER_HEADER)
+        assert response.json()["status"] == "skipped"
+
+    @patch(f"{_P}.now_utc")
+    @patch(f"{_P}._load_variable_holidays", return_value=[])
+    def test_vn_holiday_sep2_skipped(self, _mock_holidays, mock_now):
+        """September 2 (National Day) → skipped."""
+        mock_now.return_value = _mock_now_utc(2026, 9, 2, 23, 0)  # Wednesday
         response = client.post("/internal/trigger/morning-briefing", headers=TRIGGER_HEADER)
         assert response.json()["status"] == "skipped"
 
@@ -263,6 +287,27 @@ class TestMorningBriefingTradingDay:
 
         assert data["status"] == "failed"
         assert "No tickers" in data["error"]
+
+    @patch(f"{_P}._load_watchlist", return_value=["HPG"])
+    @patch(f"{_P}._load_variable_holidays", return_value=[])
+    @patch(f"{_P}.now_utc")
+    def test_failed_steps_returns_partial(
+        self, mock_now, _mock_holidays, _mock_watchlist,
+        mock_graph, mock_format, mock_save, mock_rec_model,
+    ):
+        """failed_steps non-empty → status partial even when Telegram ok."""
+        mock_now.return_value = _mock_now_utc(2026, 4, 7, 23, 0)
+        state_with_failures = {
+            **SAMPLE_GRAPH_STATE,
+            "failed_steps": ["fundamental_analysis"],
+        }
+        mock_graph.ainvoke = AsyncMock(return_value=state_with_failures)
+
+        response = client.post("/internal/trigger/morning-briefing", headers=TRIGGER_HEADER)
+        data = response.json()
+
+        assert data["status"] == "partial"
+        assert "fundamental_analysis" in data["errors"]
 
     @patch(f"{_P}._load_watchlist", return_value=["HPG"])
     @patch(f"{_P}._load_variable_holidays", return_value=[])

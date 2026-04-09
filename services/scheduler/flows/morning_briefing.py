@@ -36,6 +36,6 @@ async def morning_briefing_flow() -> dict:
         "morning_briefing_flow_completed",
         component="prefect_scheduler",
         duration_seconds=duration,
-        result=result,
+        status=result.get("status"),
     )
     return result

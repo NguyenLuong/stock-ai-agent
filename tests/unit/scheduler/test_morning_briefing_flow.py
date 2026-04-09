@@ -48,3 +48,29 @@ async def test_flow_propagates_exception(mock_trigger):
 
     with pytest.raises(Exception, match="Connection refused"):
         await morning_briefing_flow.fn()
+
+
+@pytest.mark.asyncio
+@patch("flows.morning_briefing.trigger_pipeline", new_callable=AsyncMock)
+async def test_flow_does_not_suppress_exceptions_allowing_prefect_retry(mock_trigger):
+    """Flow must not catch trigger_pipeline exceptions.
+
+    Prefect's retry logic (retries=2 on trigger_pipeline task) depends on the
+    exception propagating unmodified.  This test verifies: after a transient
+    failure the flow would succeed on a subsequent Prefect-managed invocation.
+    """
+    success_result = {"status": "ok", "duration_seconds": 8.1}
+    # First call fails (simulates what Prefect would retry); second succeeds.
+    mock_trigger.side_effect = [Exception("Transient error"), success_result]
+
+    from flows.morning_briefing import morning_briefing_flow
+
+    # First invocation (Prefect would catch and retry at the task level)
+    with pytest.raises(Exception, match="Transient error"):
+        await morning_briefing_flow.fn()
+
+    # Second invocation (Prefect retry) succeeds and returns the result
+    mock_trigger.side_effect = None
+    mock_trigger.return_value = success_result
+    result = await morning_briefing_flow.fn()
+    assert result == success_result

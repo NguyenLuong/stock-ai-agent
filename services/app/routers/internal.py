@@ -284,21 +284,27 @@ def _is_trading_day(d: date, variable_holidays: list[date] | None = None) -> boo
     return True
 
 
-def _load_variable_holidays() -> list[date]:
-    """Load variable holidays from stock_tickers.yaml."""
+def _load_ticker_config() -> dict:
+    """Read stock_tickers.yaml once and return the raw dict."""
     config_path = (
         Path(os.environ.get("CONFIG_DIR", "/app/config")) / "crawlers" / "stock_tickers.yaml"
     )
     try:
         with open(config_path) as f:
-            raw = yaml.safe_load(f) or {}
+            return yaml.safe_load(f) or {}
     except FileNotFoundError:
         logger.warning(
-            "holiday_config_not_found",
+            "ticker_config_not_found",
             component="internal_trigger",
             path=str(config_path),
         )
-        return []
+        return {}
+
+
+def _load_variable_holidays(raw: dict | None = None) -> list[date]:
+    """Load variable holidays from stock_tickers.yaml."""
+    if raw is None:
+        raw = _load_ticker_config()
     holidays: list[date] = []
     for _year, date_list in raw.get("holidays", {}).items():
         if isinstance(date_list, list):
@@ -310,21 +316,10 @@ def _load_variable_holidays() -> list[date]:
     return holidays
 
 
-def _load_watchlist() -> list[str]:
+def _load_watchlist(raw: dict | None = None) -> list[str]:
     """Load enabled tickers from stock_tickers.yaml."""
-    config_path = (
-        Path(os.environ.get("CONFIG_DIR", "/app/config")) / "crawlers" / "stock_tickers.yaml"
-    )
-    try:
-        with open(config_path) as f:
-            raw = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        logger.error(
-            "ticker_config_not_found",
-            component="internal_trigger",
-            path=str(config_path),
-        )
-        return []
+    if raw is None:
+        raw = _load_ticker_config()
     tickers: list[str] = []
     seen: set[str] = set()
     for _name, group_data in raw.get("groups", {}).items():
@@ -349,9 +344,10 @@ async def trigger_morning_briefing(
     start = time.monotonic()
     started_at = now_utc()
 
-    # AC #4: Trading day check
+    # AC #4: Trading day check — load config once for both holiday and watchlist reads
     today = started_at.date()
-    variable_holidays = _load_variable_holidays()
+    ticker_config = _load_ticker_config()
+    variable_holidays = _load_variable_holidays(ticker_config)
     if not _is_trading_day(today, variable_holidays):
         logger.info(
             "morning_briefing_skipped",
@@ -366,8 +362,8 @@ async def trigger_morning_briefing(
             "duration_seconds": round(time.monotonic() - start, 2),
         }
 
-    # AC #2: Load watchlist
-    watchlist = _load_watchlist()
+    # AC #2: Load watchlist (reuse already-loaded config — no second file read)
+    watchlist = _load_watchlist(ticker_config)
     if not watchlist:
         logger.error("morning_briefing_no_tickers", component="internal_trigger")
         return {"status": "failed", "error": "No tickers in watchlist"}
@@ -429,6 +425,8 @@ async def trigger_morning_briefing(
                 error=str(exc),
             )
 
+    failed_steps = state.get("failed_steps", [])
+
     # AC #3: Save 1 record to recommendations table
     try:
         rec = RecommendationCreate(
@@ -438,7 +436,7 @@ async def trigger_morning_briefing(
             confidence_score=None,
             risk_level=None,
             agents_used=["market_context", "technical_analysis", "fundamental_analysis"],
-            agents_failed=state.get("failed_steps", []),
+            agents_failed=failed_steps,
             data_sources={"top_picks": market_result.get("top_picks", [])},
         )
         await save_recommendation(rec)
@@ -462,11 +460,12 @@ async def trigger_morning_briefing(
         telegram_status=telegram_status,
     )
 
+    overall_status = "ok" if not failed_steps and telegram_status != "failed" else "partial"
     return {
-        "status": "ok" if telegram_status != "failed" else "partial",
+        "status": overall_status,
         "duration_seconds": duration,
         "affected_sectors": market_result.get("affected_sectors", []),
         "top_picks_count": len(market_result.get("top_picks", [])),
         "telegram": telegram_status,
-        "errors": state.get("failed_steps", []),
+        "errors": failed_steps,
     }
