@@ -7,6 +7,7 @@ from prefect import serve
 
 from config_loader import load_schedules
 from flows.data_pipeline import data_cleanup_flow, news_crawl_flow, stock_pipeline_flow
+from flows.morning_briefing import morning_briefing_flow
 from shared.logging import configure_logging, get_logger
 
 logger = get_logger("prefect_scheduler")
@@ -15,6 +16,7 @@ FLOW_REGISTRY = {
     "news_crawl": news_crawl_flow,
     "stock_pipeline": stock_pipeline_flow,
     "data_cleanup": data_cleanup_flow,
+    "morning_briefing": morning_briefing_flow,
 }
 
 # Map schedule YAML flow names to internal flow keys.
@@ -22,6 +24,7 @@ SCHEDULE_TO_FLOW = {
     "news_crawl": "news_crawl",
     "stock_pipeline": "stock_pipeline",
     "data_cleanup": "data_cleanup",
+    "morning_briefing": "morning_briefing",
 }
 
 

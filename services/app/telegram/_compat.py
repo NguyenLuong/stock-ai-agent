@@ -8,7 +8,7 @@ sys.modules to import the real library from site-packages.
 import os
 import sys
 
-_local_parent = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+_local_parent = os.path.realpath(os.path.join(os.path.dirname(__file__), os.pardir))
 
 # Save local telegram modules currently in sys.modules
 _saved_local = {}
