@@ -34,8 +34,39 @@ def format_morning_briefing(market_result: dict) -> str:
     market_result structure (from morning_briefing_graph):
         market_sentiment, affected_sectors, key_events, top_picks,
         market_summary, stale_warnings, unavailable_warnings,
-        disclaimer, generated_at.
+        disclaimer, generated_at, pipeline_status, abort_reason.
     """
+    pipeline_status = market_result.get("pipeline_status", "ok")
+    abort_reason = market_result.get("abort_reason", "")
+
+    if pipeline_status == "aborted":
+        briefing_date = to_vn_display(now_utc())
+        sentiment = market_result.get("market_sentiment", "neutral")
+        key_events = market_result.get("key_events", [])
+        summary = market_result.get("market_summary", "")
+        disclaimer = market_result.get("disclaimer", "")
+
+        reason_text = {
+            "no_sectors_identified": "Market Context không xác định được ngành bị ảnh hưởng",
+            "sectors_not_in_watchlist": "Các ngành bị ảnh hưởng không có trong danh mục theo dõi",
+        }.get(abort_reason, "Không thể xác định tín hiệu thị trường")
+
+        parts: list[str] = [
+            f"📊 *MORNING BRIEFING — {briefing_date}*",
+            f"{_sentiment_emoji(sentiment)} Tâm lý thị trường: *{sentiment.upper()}*",
+            "",
+            f"⚠️ *{reason_text}*",
+            "Phân tích kỹ thuật và cơ bản không được thực thi hôm nay.",
+        ]
+        if summary:
+            parts += ["", "📋 *TÓM TẮT VĨ MÔ*", _escape_md(summary[:500])]
+        if key_events:
+            parts += ["", "📰 *SỰ KIỆN CHÍNH*"]
+            for event in key_events[:5]:
+                parts.append(f"• {_escape_md(event)}")
+        parts += ["", f"_{disclaimer}_"]
+        return "\n".join(parts)
+
     briefing_date = to_vn_display(now_utc())
     sentiment = market_result.get("market_sentiment", "neutral")
     affected_sectors = market_result.get("affected_sectors", [])

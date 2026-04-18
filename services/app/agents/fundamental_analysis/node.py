@@ -79,6 +79,121 @@ def _determine_growth(eps_growth: float | None) -> str:
     return "stable"
 
 
+_BCTC_METADATA_COLS = {"item", "item_en", "item_id", "unit", "levels", "row_number"}
+
+_REVENUE_PATTERNS = r"net_revenue|revenue_net|^revenue$|doanh_thu_thuan|doanh thu thuần|doanh thu bán"
+_PROFIT_PATTERNS = r"profit_after_tax|net_profit|lợi nhuận sau|loi_nhuan_sau"
+_DEBT_PATTERNS = r"^total_liabilit|total_liabilities|total_debt|^liabilities$|nợ phải trả"
+_EQUITY_PATTERNS = r"^owner.*equity$|^equity$|total_equity|vốn chủ sở hữu|von_chu_so_huu"
+_CUR_ASSETS_PATTERNS = r"current_assets|short_term_assets|tài sản ngắn hạn|tai_san_ngan_han"
+_CUR_LIAB_PATTERNS = r"current_liab|short_term_liab|nợ ngắn hạn|no_ngan_han"
+
+
+def _latest_period_column(df: "object") -> str | None:
+    """Pick the most-recent period column from a KBS finance DataFrame.
+
+    KBS columns: ['item', 'item_en', 'item_id', 'unit', 'levels', 'row_number',
+    '<period1>', '<period2>', ...]. Period labels are like '2025-Q4' or '2025'.
+    Returns the column with the highest sort value, or None when absent.
+    """
+    period_cols = [c for c in df.columns if c not in _BCTC_METADATA_COLS]
+    if not period_cols:
+        return None
+    # String sort works for "YYYY-QN" and "YYYY" labels (descending picks newest).
+    return sorted(period_cols, reverse=True)[0]
+
+
+def _find_row_value(
+    df: "object",
+    patterns: str,
+    latest_col: str,
+) -> float | None:
+    """Find the first row matching regex patterns on item_id or item columns."""
+    for col_name in ("item_id", "item"):
+        if col_name not in df.columns:
+            continue
+        series = df[col_name].astype(str)
+        mask = series.str.contains(patterns, case=False, na=False, regex=True)
+        if mask.any():
+            val = df.loc[mask, latest_col].iloc[0]
+            if val is None:
+                return None
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _extract_bctc_latest(
+    income_df: object,   # pd.DataFrame | Exception
+    balance_df: object,  # pd.DataFrame | Exception
+) -> dict[str, float | None]:
+    """Extract latest-period BCTC values from KBS Finance DataFrames.
+
+    KBS structure (verified against vnstock.explorer.kbs.financial):
+      - Columns: ['item', 'item_en', 'item_id', 'unit', 'levels', 'row_number',
+        '<period_1>', '<period_2>', ...] where period labels sort descending
+        to give the most-recent period first.
+      - Rows indexed by RangeIndex; metric identifiers live in the `item` /
+        `item_id` columns (standardized snake_case in `item_id`).
+
+    Returns dict with keys: revenue, net_profit, debt_to_equity, current_ratio.
+    All values None on extraction failure (never raises).
+    """
+    result: dict[str, float | None] = {
+        "revenue": None,
+        "net_profit": None,
+        "debt_to_equity": None,
+        "current_ratio": None,
+    }
+
+    try:
+        import pandas as pd
+        if (
+            not isinstance(income_df, Exception)
+            and isinstance(income_df, pd.DataFrame)
+            and not income_df.empty
+        ):
+            latest_col = _latest_period_column(income_df)
+            if latest_col is not None:
+                result["revenue"] = _find_row_value(income_df, _REVENUE_PATTERNS, latest_col)
+                result["net_profit"] = _find_row_value(income_df, _PROFIT_PATTERNS, latest_col)
+    except Exception as e:
+        logger.debug(
+            "bctc_income_extract_failed",
+            component="fundamental_analysis",
+            error=str(e),
+        )
+
+    try:
+        import pandas as pd
+        if (
+            not isinstance(balance_df, Exception)
+            and isinstance(balance_df, pd.DataFrame)
+            and not balance_df.empty
+        ):
+            latest_col = _latest_period_column(balance_df)
+            if latest_col is not None:
+                total_debt = _find_row_value(balance_df, _DEBT_PATTERNS, latest_col)
+                equity = _find_row_value(balance_df, _EQUITY_PATTERNS, latest_col)
+                if total_debt is not None and equity not in (None, 0):
+                    result["debt_to_equity"] = round(total_debt / equity, 2)
+
+                cur_assets = _find_row_value(balance_df, _CUR_ASSETS_PATTERNS, latest_col)
+                cur_liab = _find_row_value(balance_df, _CUR_LIAB_PATTERNS, latest_col)
+                if cur_assets is not None and cur_liab not in (None, 0):
+                    result["current_ratio"] = round(cur_assets / cur_liab, 2)
+    except Exception as e:
+        logger.debug(
+            "bctc_balance_extract_failed",
+            component="fundamental_analysis",
+            error=str(e),
+        )
+
+    return result
+
+
 def _calc_confidence(
     company_ratios: dict[str, float | None],
     sector_avg: dict[str, Decimal | None],
@@ -160,6 +275,8 @@ async def fundamental_analysis_node(state: FundamentalAnalysisState) -> dict:
     )
 
     # Fallback: fetch on-the-fly via vnstock if no DB data
+    income_df: object = Exception("not fetched")
+    balance_df: object = Exception("not fetched")
     if not company_ratios_raw:
         logger.warning(
             "no_ratios_in_db_fetching_vnstock",
@@ -168,12 +285,16 @@ async def fundamental_analysis_node(state: FundamentalAnalysisState) -> dict:
         )
         try:
             client = VnstockClient()
-            df = await asyncio.to_thread(
-                client.get_financial_ratios, ticker, "quarter",
+            ratio_df, income_df, balance_df = await asyncio.gather(
+                asyncio.to_thread(client.get_financial_ratios, ticker, "quarter"),
+                asyncio.to_thread(client.get_income_statement, ticker, "quarter"),
+                asyncio.to_thread(client.get_balance_sheet, ticker, "quarter"),
+                return_exceptions=True,
             )
-            fallback_source = getattr(df, "attrs", {}).get("data_source", "vnstock")
-            await save_financial_ratios(ticker, df, data_source=fallback_source)
-            company_ratios_raw, data_as_of = await get_latest_financial_ratios(ticker)
+            if not isinstance(ratio_df, Exception):
+                fallback_source = getattr(ratio_df, "attrs", {}).get("data_source", "vnstock")
+                await save_financial_ratios(ticker, ratio_df, data_source=fallback_source)
+                company_ratios_raw, data_as_of = await get_latest_financial_ratios(ticker)
             used_fallback = True
         except Exception as e:
             logger.error(
@@ -240,6 +361,17 @@ async def fundamental_analysis_node(state: FundamentalAnalysisState) -> dict:
     # Pre-compute prompt variables (H2/H3: outside LLM try blocks)
     company_prompt = _build_ratio_for_prompt(company_ratios_raw)
 
+    # Extract BCTC data from income_statement / balance_sheet (if fetched via fallback)
+    bctc_data = _extract_bctc_latest(income_df, balance_df)
+    logger.debug(
+        "bctc_data_extracted",
+        component="fundamental_analysis",
+        revenue=bctc_data["revenue"],
+        net_profit=bctc_data["net_profit"],
+        debt_to_equity=bctc_data["debt_to_equity"],
+        current_ratio=bctc_data["current_ratio"],
+    )
+
     # Sector avg for bctc_analysis prompt (needs pe, pb, roe keys)
     sector_avg_for_bctc: dict | None = None
     if any(v is not None for v in sector_avg.values()):
@@ -283,10 +415,10 @@ async def fundamental_analysis_node(state: FundamentalAnalysisState) -> dict:
             pb_ratio=company_prompt["pb"],
             roe=company_prompt["roe"],
             eps=company_prompt["eps"],
-            revenue=None,
-            net_profit=None,
-            debt_to_equity=None,
-            current_ratio=None,
+            revenue=bctc_data["revenue"],
+            net_profit=bctc_data["net_profit"],
+            debt_to_equity=bctc_data["debt_to_equity"],
+            current_ratio=bctc_data["current_ratio"],
             sector_avg=sector_avg_for_bctc,
         )
         model = config.get_model(bctc_prompt.model_key)

@@ -211,28 +211,34 @@ async def sector_filter_node(state: MorningBriefingState) -> dict:
             group_sector = group_data.get("sector", "")
             if group_sector not in affected_sectors:
                 continue
+            max_tickers = group_data.get("max_tickers")  # None = unlimited
+            group_added = 0
             for ticker in group_data.get("tickers", []):
+                if max_tickers is not None and group_added >= max_tickers:
+                    break
                 t = str(ticker).strip().upper()
                 if t and t not in seen:
                     seen.add(t)
                     filtered.append(t)
+                    group_added += 1
 
-    # Fallback: empty affected_sectors or no matches → full watchlist
+    # Early exit: pipeline aborted when filter yields no tickers
     if not filtered:
-        if not affected_sectors:
-            logger.warning(
-                "morning_briefing_no_sectors_identified",
-                component="morning_briefing_graph",
-                fallback="full_watchlist",
-            )
-        else:
-            logger.warning(
-                "morning_briefing_sector_filter_empty",
-                component="morning_briefing_graph",
-                affected_sectors=affected_sectors,
-                fallback="full_watchlist",
-            )
-        filtered = list(watchlist)
+        abort_reason = (
+            "no_sectors_identified" if not affected_sectors
+            else "sectors_not_in_watchlist"
+        )
+        logger.warning(
+            "morning_briefing_pipeline_aborted",
+            component="morning_briefing_graph",
+            reason=abort_reason,
+            affected_sectors=affected_sectors,
+        )
+        return {
+            "filtered_tickers": [],
+            "pipeline_aborted": True,
+            "abort_reason": abort_reason,
+        }
 
     logger.info(
         "sector_filter_completed",
@@ -302,9 +308,9 @@ async def technical_batch_node(state: MorningBriefingState) -> dict:
             if trend != "sideways" or momentum != "neutral":
                 notable_tickers.append(t)
 
-    # Fallback: if no notable tickers → use all filtered_tickers
+    # Fallback: chỉ khi notable rỗng hoàn toàn → lấy 2 tickers đầu
     if not notable_tickers:
-        notable_tickers = list(filtered_tickers)
+        notable_tickers = filtered_tickers[:2]
 
     if success_count == 0:
         failed_steps.append("technical_batch")
@@ -396,6 +402,28 @@ async def fundamental_batch_node(state: MorningBriefingState) -> dict:
 
 async def morning_synthesis_node(state: MorningBriefingState) -> dict:
     """Step 5: Compile all results into market_result dict."""
+    # Early exit: pipeline aborted at sector filter — skip all downstream logic
+    if state.get("pipeline_aborted"):
+        market_result = {
+            "pipeline_status": "aborted",
+            "abort_reason": state.get("abort_reason", "unknown"),
+            "market_sentiment": state.get("market_sentiment", "neutral"),
+            "affected_sectors": state.get("affected_sectors", []),
+            "key_events": state.get("key_events", []),
+            "market_summary": (state.get("market_summary") or {}).get("macro_summary") or "",
+            "top_picks": [],
+            "stale_warnings": [],
+            "unavailable_warnings": [],
+            "disclaimer": "Thông tin chỉ mang tính chất tham khảo, không phải khuyến nghị đầu tư.",
+            "generated_at": now_utc().isoformat(),
+        }
+        logger.info(
+            "morning_synthesis_aborted",
+            component="morning_briefing_graph",
+            abort_reason=state.get("abort_reason"),
+        )
+        return {"market_result": market_result}
+
     market_summary = state.get("market_summary")
     market_sentiment = state.get("market_sentiment", "neutral")
     affected_sectors = state.get("affected_sectors", [])

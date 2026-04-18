@@ -134,8 +134,9 @@ class TestMorningBriefingPipeline:
     @patch(_PATCH_FA, new_callable=AsyncMock)
     @patch(_PATCH_TA, new_callable=AsyncMock)
     @patch(_PATCH_MC, new_callable=AsyncMock)
-    async def test_pipeline_with_market_context_failure(self, mock_mc, mock_ta, mock_fa, tmp_path):
-        """Pipeline continues even when market_context fails — fallback to full watchlist."""
+    async def test_pipeline_aborts_when_market_context_fails(self, mock_mc, mock_ta, mock_fa, tmp_path):
+        """When market_context fails → no affected_sectors → sector_filter aborts the pipeline.
+        Technical/fundamental batches must NOT run; synthesis returns aborted market_result."""
         mock_mc.side_effect = Exception("LLM unavailable")
         mock_ta.return_value = _mock_technical_result("HPG", "uptrend")
         mock_fa.return_value = _mock_fundamental_result("HPG")
@@ -156,16 +157,72 @@ class TestMorningBriefingPipeline:
             r2 = await sector_filter_node(state)
             state.update(r2)
 
-            r3 = await technical_batch_node(state)
-            state.update(r3)
+            # Simulate conditional routing: when aborted, skip TA/FA entirely
+            if not state.get("pipeline_aborted"):
+                r3 = await technical_batch_node(state)
+                state.update(r3)
 
-            r4 = await fundamental_batch_node(state)
-            state.update(r4)
+                r4 = await fundamental_batch_node(state)
+                state.update(r4)
 
             r5 = await morning_synthesis_node(state)
             state.update(r5)
 
         assert "market_context" in state.get("failed_steps", [])
-        assert state.get("market_result") is not None
-        # Fallback: full watchlist used since no sectors identified
-        assert state["filtered_tickers"] == ["HPG", "VNM", "VCB", "MBB"]
+        assert state.get("pipeline_aborted") is True
+        assert state.get("abort_reason") == "no_sectors_identified"
+        assert state["filtered_tickers"] == []
+        # TA/FA skipped → mocks never called
+        mock_ta.assert_not_called()
+        mock_fa.assert_not_called()
+        mr = state["market_result"]
+        assert mr["pipeline_status"] == "aborted"
+        assert mr["top_picks"] == []
+
+    def test_conditional_routing_aborted_goes_to_synthesis(self):
+        """Verify _route_after_sector_filter conditional routing function.
+
+        langgraph is not available in the unit test environment, so we re-import
+        the routing function via importlib with a stubbed langgraph module.
+        """
+        import sys
+        import types
+        import importlib
+
+        # Stub langgraph.graph if not installed
+        if "langgraph" not in sys.modules:
+            fake_langgraph = types.ModuleType("langgraph")
+            fake_graph = types.ModuleType("langgraph.graph")
+            fake_graph.END = "__END__"
+
+            class _StubStateGraph:
+                def __init__(self, *_, **__):
+                    pass
+
+                def add_node(self, *_, **__):
+                    pass
+
+                def set_entry_point(self, *_, **__):
+                    pass
+
+                def add_edge(self, *_, **__):
+                    pass
+
+                def add_conditional_edges(self, *_, **__):
+                    pass
+
+                def compile(self):
+                    return None
+
+            fake_graph.StateGraph = _StubStateGraph
+            sys.modules["langgraph"] = fake_langgraph
+            sys.modules["langgraph.graph"] = fake_graph
+
+        mod = importlib.import_module(
+            "services.app.agents.morning_briefing_graph",
+        )
+        route_fn = mod._route_after_sector_filter
+
+        assert route_fn({"pipeline_aborted": True}) == "synthesis"
+        assert route_fn({"pipeline_aborted": False}) == "technical_batch"
+        assert route_fn({}) == "technical_batch"

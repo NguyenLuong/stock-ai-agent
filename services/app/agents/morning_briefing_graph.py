@@ -28,9 +28,19 @@ graph_builder.add_node("technical_batch", technical_batch_node)
 graph_builder.add_node("fundamental_batch", fundamental_batch_node)
 graph_builder.add_node("synthesis", morning_synthesis_node)
 
+def _route_after_sector_filter(state: MorningBriefingState) -> str:
+    if state.get("pipeline_aborted"):
+        return "synthesis"
+    return "technical_batch"
+
+
 graph_builder.set_entry_point("market_context")
 graph_builder.add_edge("market_context", "sector_filter")
-graph_builder.add_edge("sector_filter", "technical_batch")
+graph_builder.add_conditional_edges(
+    "sector_filter",
+    _route_after_sector_filter,
+    {"synthesis": "synthesis", "technical_batch": "technical_batch"},
+)
 graph_builder.add_edge("technical_batch", "fundamental_batch")
 graph_builder.add_edge("fundamental_batch", "synthesis")
 graph_builder.add_edge("synthesis", END)
