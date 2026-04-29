@@ -42,6 +42,7 @@ groups:
   securities:
     enabled: true
     sector: "securities"
+    max_tickers: 2
     description: "Cong ty chung khoan"
     tickers:
       - SSI
@@ -53,6 +54,7 @@ groups:
   oil_gas:
     enabled: true
     sector: "oil_gas"
+    max_tickers: 2
     description: "Dau khi"
     tickers:
       - GAS
@@ -64,6 +66,7 @@ groups:
   banking:
     enabled: true
     sector: "banking"
+    max_tickers: 3
     description: "Ngan hang"
     tickers:
       - VCB
@@ -80,6 +83,7 @@ groups:
   steel:
     enabled: true
     sector: "steel"
+    max_tickers: 2
     description: "Thep"
     tickers:
       - HPG

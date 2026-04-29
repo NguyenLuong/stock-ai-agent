@@ -153,6 +153,10 @@ class MorningBriefingState(TypedDict, total=False):
     # --- Step 5: Synthesis output ---
     market_result: dict | None
 
+    # --- Pipeline control ---
+    pipeline_aborted: bool
+    abort_reason: str  # "no_sectors_identified" | "sectors_not_in_watchlist"
+
     # --- Tracking ---
     failed_steps: list[str]
 

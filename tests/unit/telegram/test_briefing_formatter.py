@@ -94,6 +94,60 @@ class TestFormatMorningBriefing:
         assert "MORNING BRIEFING" in result
 
 
+class TestFormatAbortedPipeline:
+    @pytest.fixture
+    def aborted_no_sectors(self):
+        return {
+            "pipeline_status": "aborted",
+            "abort_reason": "no_sectors_identified",
+            "market_sentiment": "neutral",
+            "affected_sectors": [],
+            "key_events": ["Ngân hàng trung ương giữ lãi suất ổn định"],
+            "market_summary": "Thị trường bình lặng, không có biến động lớn",
+            "top_picks": [],
+            "stale_warnings": [],
+            "unavailable_warnings": [],
+            "disclaimer": "Thông tin chỉ mang tính chất tham khảo, không phải khuyến nghị đầu tư.",
+            "generated_at": "2026-04-01T06:30:00Z",
+        }
+
+    def test_aborted_no_sectors_identified_message(self, aborted_no_sectors):
+        result = format_morning_briefing(aborted_no_sectors)
+        assert "Market Context không xác định được ngành bị ảnh hưởng" in result
+        assert "TOP PICKS" not in result
+        assert "Không có tín hiệu nổi bật" not in result
+
+    def test_aborted_sectors_not_in_watchlist_message(self, aborted_no_sectors):
+        aborted_no_sectors["abort_reason"] = "sectors_not_in_watchlist"
+        result = format_morning_briefing(aborted_no_sectors)
+        assert "Các ngành bị ảnh hưởng không có trong danh mục theo dõi" in result
+        assert "TOP PICKS" not in result
+
+    def test_aborted_includes_macro_summary(self, aborted_no_sectors):
+        result = format_morning_briefing(aborted_no_sectors)
+        assert "TÓM TẮT VĨ MÔ" in result
+        assert "Thị trường bình lặng" in result
+
+    def test_aborted_includes_key_events(self, aborted_no_sectors):
+        result = format_morning_briefing(aborted_no_sectors)
+        assert "SỰ KIỆN CHÍNH" in result
+        assert "lãi suất" in result
+
+    def test_aborted_includes_disclaimer(self, aborted_no_sectors):
+        result = format_morning_briefing(aborted_no_sectors)
+        assert "tham khảo" in result
+
+    def test_aborted_unknown_reason_default_text(self, aborted_no_sectors):
+        aborted_no_sectors["abort_reason"] = "some_unknown_reason"
+        result = format_morning_briefing(aborted_no_sectors)
+        assert "Không thể xác định tín hiệu thị trường" in result
+
+    def test_aborted_no_summary_no_summary_section(self, aborted_no_sectors):
+        aborted_no_sectors["market_summary"] = ""
+        result = format_morning_briefing(aborted_no_sectors)
+        assert "TÓM TẮT VĨ MÔ" not in result
+
+
 class TestHelperFunctions:
     def test_signal_emoji_uptrend(self):
         assert _signal_emoji("uptrend") == "🟢"

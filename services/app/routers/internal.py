@@ -374,7 +374,7 @@ async def trigger_morning_briefing(
     from services.app.agents.morning_briefing_graph import morning_briefing_graph
     from shared.db.repositories.recommendation_repo import save_recommendation
     from shared.models.recommendation import RecommendationCreate
-    from telegram.formatters.briefing_formatter import format_morning_briefing
+    from services.app.telegram.formatters.briefing_formatter import format_morning_briefing
 
     # AC #2: Run Morning Briefing Intelligence Graph (1 invocation)
     try:

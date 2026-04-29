@@ -192,6 +192,19 @@ groups:
     tickers: [XXX]
 """
 
+_YAML_WITH_MAX = """
+groups:
+  banking:
+    enabled: true
+    sector: "banking"
+    max_tickers: 2
+    tickers: [VCB, BID, CTG, TCB, MBB, ACB, VPB, TPB, STB, HDB]
+  steel:
+    enabled: true
+    sector: "steel"
+    tickers: [HPG, HSG, NKG]
+"""
+
 
 class TestSectorFilterNode:
     @pytest.mark.asyncio
@@ -206,7 +219,7 @@ class TestSectorFilterNode:
         assert set(result["filtered_tickers"]) == {"VCB", "MBB", "TCB"}
 
     @pytest.mark.asyncio
-    async def test_empty_sectors_fallback_to_watchlist(self, tmp_path):
+    async def test_empty_sectors_aborts_pipeline(self, tmp_path):
         config_file = tmp_path / "crawlers" / "stock_tickers.yaml"
         config_file.parent.mkdir(parents=True)
         config_file.write_text(_YAML_CONTENT)
@@ -214,10 +227,12 @@ class TestSectorFilterNode:
         state = _base_state(affected_sectors=[])
         with patch.dict("os.environ", {"CONFIG_DIR": str(tmp_path)}):
             result = await sector_filter_node(state)
-        assert result["filtered_tickers"] == ["HPG", "VNM", "VCB", "MBB"]
+        assert result["filtered_tickers"] == []
+        assert result["pipeline_aborted"] is True
+        assert result["abort_reason"] == "no_sectors_identified"
 
     @pytest.mark.asyncio
-    async def test_nonexistent_sector_fallback(self, tmp_path):
+    async def test_nonexistent_sector_aborts_pipeline(self, tmp_path):
         config_file = tmp_path / "crawlers" / "stock_tickers.yaml"
         config_file.parent.mkdir(parents=True)
         config_file.write_text(_YAML_CONTENT)
@@ -225,7 +240,34 @@ class TestSectorFilterNode:
         state = _base_state(affected_sectors=["nonexistent"])
         with patch.dict("os.environ", {"CONFIG_DIR": str(tmp_path)}):
             result = await sector_filter_node(state)
-        assert result["filtered_tickers"] == ["HPG", "VNM", "VCB", "MBB"]
+        assert result["filtered_tickers"] == []
+        assert result["pipeline_aborted"] is True
+        assert result["abort_reason"] == "sectors_not_in_watchlist"
+
+    @pytest.mark.asyncio
+    async def test_max_tickers_caps_group(self, tmp_path):
+        config_file = tmp_path / "crawlers" / "stock_tickers.yaml"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(_YAML_WITH_MAX)
+
+        state = _base_state(affected_sectors=["banking"])
+        with patch.dict("os.environ", {"CONFIG_DIR": str(tmp_path)}):
+            result = await sector_filter_node(state)
+        # banking group has 10 tickers but max_tickers=2 → only first 2
+        assert result["filtered_tickers"] == ["VCB", "BID"]
+        assert "pipeline_aborted" not in result or not result.get("pipeline_aborted")
+
+    @pytest.mark.asyncio
+    async def test_max_tickers_none_takes_all(self, tmp_path):
+        config_file = tmp_path / "crawlers" / "stock_tickers.yaml"
+        config_file.parent.mkdir(parents=True)
+        config_file.write_text(_YAML_WITH_MAX)
+
+        state = _base_state(affected_sectors=["steel"])
+        with patch.dict("os.environ", {"CONFIG_DIR": str(tmp_path)}):
+            result = await sector_filter_node(state)
+        # steel group has no max_tickers → all 3 tickers
+        assert result["filtered_tickers"] == ["HPG", "HSG", "NKG"]
 
     @pytest.mark.asyncio
     async def test_disabled_group_excluded(self, tmp_path):
@@ -236,10 +278,13 @@ class TestSectorFilterNode:
         state = _base_state(affected_sectors=["other"])
         with patch.dict("os.environ", {"CONFIG_DIR": str(tmp_path)}):
             result = await sector_filter_node(state)
-        assert "XXX" not in result["filtered_tickers"]
+        # Disabled group excluded → abort with sectors_not_in_watchlist
+        assert result["filtered_tickers"] == []
+        assert result.get("pipeline_aborted") is True
 
     @pytest.mark.asyncio
     async def test_config_not_found_fallback(self):
+        # config missing is a distinct edge case — still returns full watchlist
         state = _base_state(affected_sectors=["banking"])
         with patch.dict("os.environ", {"CONFIG_DIR": "/nonexistent/path"}):
             result = await sector_filter_node(state)
@@ -268,12 +313,40 @@ class TestTechnicalBatchNode:
 
     @pytest.mark.asyncio
     @patch(_PATCH_TA, new_callable=AsyncMock)
-    async def test_all_fail_fallback_to_filtered(self, mock_ta):
+    async def test_all_fail_fallback_takes_first_two(self, mock_ta):
+        """When no notable tickers emerge, fallback to first 2 filtered tickers."""
         mock_ta.side_effect = Exception("all fail")
-        state = _base_state(filtered_tickers=["HPG", "VNM"])
+        state = _base_state(filtered_tickers=["HPG", "VNM", "VCB", "MBB"])
         result = await technical_batch_node(state)
         assert result["notable_tickers"] == ["HPG", "VNM"]
         assert "technical_batch" in result["failed_steps"]
+
+    @pytest.mark.asyncio
+    @patch(_PATCH_TA, new_callable=AsyncMock)
+    async def test_all_sideways_fallback_takes_first_two(self, mock_ta):
+        """All tickers sideways+neutral → notable empty → fallback to first 2."""
+        mock_ta.return_value = {
+            "technical_analysis": {
+                "signals": {"trend": "sideways", "momentum": "neutral"},
+                "confidence": 0.5,
+            },
+        }
+        state = _base_state(filtered_tickers=["HPG", "VNM", "VCB", "MBB"])
+        result = await technical_batch_node(state)
+        assert result["notable_tickers"] == ["HPG", "VNM"]
+
+    @pytest.mark.asyncio
+    @patch(_PATCH_TA, new_callable=AsyncMock)
+    async def test_one_notable_no_fallback(self, mock_ta):
+        """1 notable ticker exists → no fallback, keep as is."""
+        mock_ta.side_effect = [
+            {"technical_analysis": {"signals": {"trend": "uptrend", "momentum": "bullish"}, "confidence": 0.8}},
+            {"technical_analysis": {"signals": {"trend": "sideways", "momentum": "neutral"}, "confidence": 0.5}},
+            {"technical_analysis": {"signals": {"trend": "sideways", "momentum": "neutral"}, "confidence": 0.5}},
+        ]
+        state = _base_state(filtered_tickers=["HPG", "VNM", "VCB"])
+        result = await technical_batch_node(state)
+        assert result["notable_tickers"] == ["HPG"]
 
     @pytest.mark.asyncio
     @patch(_PATCH_TA, new_callable=AsyncMock)
@@ -436,6 +509,25 @@ class TestMorningSynthesisNode:
         ]
         for key in required_keys:
             assert key in mr, f"Missing key: {key}"
+
+    @pytest.mark.asyncio
+    async def test_aborted_pipeline_yields_aborted_market_result(self):
+        state = {
+            "pipeline_aborted": True,
+            "abort_reason": "no_sectors_identified",
+            "market_sentiment": "neutral",
+            "affected_sectors": [],
+            "key_events": ["Event 1"],
+            "market_summary": {"macro_summary": "Macro text"},
+        }
+        result = await morning_synthesis_node(state)
+        mr = result["market_result"]
+        assert mr["pipeline_status"] == "aborted"
+        assert mr["abort_reason"] == "no_sectors_identified"
+        assert mr["top_picks"] == []
+        assert mr["stale_warnings"] == []
+        assert mr["unavailable_warnings"] == []
+        assert mr["market_summary"] == "Macro text"
 
     @pytest.mark.asyncio
     async def test_stale_warnings_populated_for_old_data(self):
