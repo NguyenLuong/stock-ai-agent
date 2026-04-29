@@ -109,6 +109,7 @@ def _find_row_value(
     latest_col: str,
 ) -> float | None:
     """Find the first row matching regex patterns on item_id or item columns."""
+    import pandas as pd
     for col_name in ("item_id", "item"):
         if col_name not in df.columns:
             continue
@@ -116,12 +117,16 @@ def _find_row_value(
         mask = series.str.contains(patterns, case=False, na=False, regex=True)
         if mask.any():
             val = df.loc[mask, latest_col].iloc[0]
-            if val is None:
+            if val is None or pd.isna(val):
                 return None
             try:
-                return float(val)
+                f_val = float(val)
             except (TypeError, ValueError):
                 return None
+            # Guard against NaN produced by numeric coercion (e.g. float("nan"))
+            if f_val != f_val:
+                return None
+            return f_val
     return None
 
 

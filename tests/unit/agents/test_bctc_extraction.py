@@ -190,3 +190,31 @@ class TestExtractBctcLatest:
         ])
         result = _extract_bctc_latest(df, Exception("x"))
         assert result["revenue"] == 7777.0
+
+    def test_nan_cell_returns_none_not_nan(self):
+        """NaN in latest-period cell must flow out as None (never as NaN).
+
+        Guards against a bug where NaN leaks into the BCTC prompt — `float(NaN)`
+        equals NaN, not None, so a naive `val is None` check misses it.
+        """
+        import math
+
+        income = _make_income_df(net_revenue=float("nan"), net_profit=2400.0)
+        balance = _make_balance_df(
+            total_liabilities=float("nan"),
+            total_equity=10000.0,
+            current_assets=4000.0,
+            current_liabilities=float("nan"),
+        )
+        result = _extract_bctc_latest(income, balance)
+        # revenue missing → None (not NaN)
+        assert result["revenue"] is None
+        # net_profit present → extracted
+        assert result["net_profit"] == 2400.0
+        # total_debt NaN → debt_to_equity cannot be computed → None
+        assert result["debt_to_equity"] is None
+        # current_liab NaN → current_ratio cannot be computed → None
+        assert result["current_ratio"] is None
+        # Extra guard: nothing returned is NaN
+        for v in result.values():
+            assert v is None or not math.isnan(v)

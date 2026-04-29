@@ -309,13 +309,11 @@ async def get_latest_financial_ratios(
             .order_by(MarketData.data_as_of.desc())
             .limit(1)
         )
-        row = result.first()
+        record = result.scalars().first()
 
-    if row is None:
+    if record is None:
         return {}, None
 
-    # SQLAlchemy Row → actual ORM object
-    record = row[0] if isinstance(row, tuple) else row
     ratios: dict[str, Decimal | None] = {
         field: getattr(record, field, None)
         for field in ("pe_ratio", "pb_ratio", "roe", "eps", "eps_growth_yoy")

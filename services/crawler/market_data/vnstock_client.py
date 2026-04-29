@@ -91,7 +91,7 @@ class VnstockClient:
         from vnstock import Finance
 
         finance = Finance(
-            symbol=symbol, source=self._finance_source, standardize_columns=True
+            symbol=symbol, source=self._finance_source
         )
         return finance.ratio(period=period)
 
@@ -107,7 +107,7 @@ class VnstockClient:
         from vnstock import Finance
 
         finance = Finance(
-            symbol=symbol, source=self._finance_source, standardize_columns=True
+            symbol=symbol, source=self._finance_source
         )
         return finance.income_statement(period=period)
 
@@ -123,7 +123,7 @@ class VnstockClient:
         from vnstock import Finance
 
         finance = Finance(
-            symbol=symbol, source=self._finance_source, standardize_columns=True
+            symbol=symbol, source=self._finance_source
         )
         return finance.balance_sheet(period=period)
 

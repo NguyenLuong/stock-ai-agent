@@ -23,7 +23,7 @@ EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMENSION = 1536
 # text-embedding-3-small limit: 8192 tokens.
 # Vietnamese text averages ~1.5-2.5 chars/token (mixed Vietnamese + numbers/URLs).
-# Conservative limit: ~7500 tokens * 2 chars/token = 15000 chars.
+# Conservative limit: ~7000 tokens * 2 chars/token = 14000 chars.
 MAX_INPUT_CHARS = 14000
 
 
